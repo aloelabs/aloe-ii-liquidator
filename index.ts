@@ -16,13 +16,10 @@ dotenvExpand.expand(config);
 const web3: Web3 = new Web3(new Web3.providers.WebsocketProvider(process.env.GOERLI_TESTNET_ENDPOINT!));
 
 const FACTORY_ADDRESS: string = process.env.FACTORY_ADDRESS!;
-const LENS_CONTRACT_ADDRESS: string = process.env.LENS_CONTRACT_ADDRESS!;
 const CREATE_ACCOUNT_TOPIC_ID: string = process.env.CREATE_ACCOUNT_TOPIC_ID!;
 const ACCOUNT_INDEX: number = parseInt(process.env.ACCOUNT_INDEX!);
 
 type Address = string;
-
-const borrowerLensContract: Contract = new web3.eth.Contract(marginAccountLensJson as AbiItem[], LENS_CONTRACT_ADDRESS);
 
 function format_address(hexString: string): string {
     // Check that the string starts with '0x'
@@ -51,42 +48,36 @@ function collect_borrowers(block: number, borrowers: Set<Address>) {
             const borrowerAddress: Address = format_address(topics[ACCOUNT_INDEX]);
             // Now we need to get the the financial details of the Borrower
             borrowers.add(borrowerAddress);
-            // borrowerLensContract.methods.getAssets(borrowerAddress).call().then();
-            // liquidation_candidates.set(borrowerAddress, )
         } else {
             console.error(error);
         }
     })
 }
 
-function collect_liquidate(block: number, borrowers: Set<Address>) {
-    collect_borrowers(block, borrowers);
-    scan(borrowers);
-}
-
 function scan(borrowers: Set<Address>) {
-    borrowers.forEach(function(borrower) {
-        // Instantiate the borrower contract
-        const borrowerContract: Contract = new web3.eth.Contract(marginAccountJson as AbiItem[], borrower);
+    let promises: Promise<void>[] = [];
+    borrowers.forEach(borrower => {
+        promises.push(
+            new Promise(async (resolve, reject) => {
+                const borrowerContract: Contract = new web3.eth.Contract(marginAccountJson as AbiItem[], borrower);
+                const solvent: boolean = await isSolvent(borrowerContract);
+                if (!solvent) {
+                    borrowerContract.methods.liquidate().call().error(console.error);
+                }
+            })
+        )
 
-        if (!isSolvent(borrowerContract)) {
-            borrowerContract.methods.liquidate().call().error(console.error);
-        }
-    });
+    })
+    return Promise.all(promises).catch(error => console.error(error));
 }
 
-function isSolvent(borrowerContract: Contract): boolean {
-    // Make an instance of the contract
-    let solvencyResult: boolean = false;
-    borrowerContract.methods.liquidate().estimateGas(function(error: Error, estimate: Number) {
-        if (error) {
-            solvencyResult = true;
-            return;
-        } else {
-            solvencyResult = false;
-        }
-    })
-    return solvencyResult;
+async function isSolvent(borrowerContract: Contract): Promise<boolean> {
+    try {
+        await borrowerContract.methods.liquidate().estimateGas();
+        return true;
+    } catch (e) {
+        return false;
+    }
 }
 
 // First step, get a list of all of the liquidation candidates
@@ -94,11 +85,11 @@ const ALOE_INITIAL_DEPLOY: number = 2394823;
 
 // Initialize the set of the borrowers and populate it w/ all the current borrower accounts
 let borrowers: Set<Address> = new Set<Address>();
-setTimeout(() => collect_borrowers(ALOE_INITIAL_DEPLOY, borrowers), 1000);
+collect_borrowers(ALOE_INITIAL_DEPLOY, borrowers);
 
 const TIMEOUT_IN_MILLISECONDS: number = 500;
 
-web3.eth.subscribe("newBlockHeaders").on("data", (block: BlockHeader) => setTimeout(() => collect_liquidate(block.number, borrowers), TIMEOUT_IN_MILLISECONDS));
+web3.eth.subscribe("newBlockHeaders").on("data", (block: BlockHeader) => setTimeout(() => scan(borrowers), TIMEOUT_IN_MILLISECONDS));
 
 process.on("SIGINT", () => {
     console.log("Caught an interrupt signal");
