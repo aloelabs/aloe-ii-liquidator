@@ -54,21 +54,15 @@ function collect_borrowers(block: number, borrowers: Set<Address>) {
     })
 }
 
-function scan(borrowers: Set<Address>) {
-    let promises: Promise<void>[] = [];
-    borrowers.forEach(borrower => {
-        promises.push(
-            new Promise(async (resolve, reject) => {
-                const borrowerContract: Contract = new web3.eth.Contract(marginAccountJson as AbiItem[], borrower);
-                const solvent: boolean = await isSolvent(borrowerContract);
-                if (!solvent) {
-                    borrowerContract.methods.liquidate().call().error(console.error);
-                }
-            })
-        )
-
-    })
-    return Promise.all(promises).catch(error => console.error(error));
+function scan(borrowers: Set<Address>): void {
+    const promise: Promise<void[]> = Promise.all([...borrowers].map(async(borrower) => {
+        const borrowerContract: Contract = new web3.eth.Contract(marginAccountJson as AbiItem[], borrower);
+        const solvent: boolean = await isSolvent(borrowerContract);
+        if (!solvent) {
+            borrowerContract.methods.liquidate().call().error(console.error);
+        }
+    }))
+    promise.catch(error => console.error(error));
 }
 
 async function isSolvent(borrowerContract: Contract): Promise<boolean> {
