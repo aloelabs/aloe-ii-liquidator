@@ -1,7 +1,7 @@
 [profile.default]
 
-src = 'contracts'
-test = 'contracts/tests'
+src = 'contracts/src'
+test = 'contracts/test'
 libs = ['contracts/lib']
 
 out = 'contracts/build'
