@@ -1,0 +1,3 @@
+[submodule "contracts/lib/aloe-ii"]
+	path = contracts/lib/aloe-ii
+	url = https://github.com/aloelabs/aloe-ii
