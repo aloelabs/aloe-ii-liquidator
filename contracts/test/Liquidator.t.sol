@@ -138,6 +138,54 @@ contract LiquidatorTest is Test, IManager {
         liquidator.liquidate(account);
     }
 
+    function test_liquidationOccurs_ExchangeRateDrops() public {
+        _prepareKitties();
+
+        // Add tokens to contract
+        deal(address(asset0), address(this), 10e6);
+        deal(address(asset1), address(this), 1e17);
+
+        // Add Margin
+        asset0.transfer(address(account), 10e6);
+        asset1.transfer(address(account), 1e17);
+
+        bytes memory data = abi.encode(100e6, 1e18, 0, 0, 0, 0);
+        bool[4] memory allowances;
+        account.modify(this, data, allowances);
+
+        assertEq(lender0.borrowBalance(address(account)), 100e6);
+        assertEq(lender1.borrowBalance(address(account)), 1e18);
+        assertEq(asset0.balanceOf(address(account)), 10e6 + 100e6);
+        assertEq(asset1.balanceOf(address(account)), 1e17 + 1e18);
+
+        skip(86400); // seconds
+
+        uint256 liabilities0 = lender0.borrowBalance(address(account));
+        uint256 liabilities1 = lender1.borrowBalance(address(account));
+        uint256 assets0 = asset0.balanceOf(address(account));
+        uint256 assets1 = asset1.balanceOf(address(account));
+
+        bytes memory data_two = abi.encode(
+            0,
+            0,
+            0,
+            0,
+            assets0 - ((liabilities0 * 1.005e8) / 1e8),
+            assets1 - ((liabilities1 * 1.005e8) / 1e8)
+        );
+        bool[4] memory allowances_two;
+        allowances_two[0] = true;
+        allowances_two[1] = true;
+        account.modify(this, data_two, allowances_two);
+
+        skip(86400);
+        bytes calldata mocked_data = abi.encodeCall(pool.observe, (int24(5)));
+        bytes calldata mocked_return_data = abi.encode(uint160(2));
+        vm.mockCall(0x1F98431c8aD98523631AE4a59f267346ea31F984, mocked_data, mocked_return_data);
+
+        liquidator.liquidate(account);
+    }
+
     function _prepareKitties() private {
         address alice = makeAddr("alice");
 
