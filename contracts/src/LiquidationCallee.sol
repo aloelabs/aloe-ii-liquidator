@@ -8,7 +8,6 @@ import {ERC20, SafeTransferLib} from "solmate/utils/SafeTransferLib.sol";
 import {Borrower} from "aloe-ii-core/Borrower.sol";
 import "forge-std/console.sol";
 
-
 contract LiquidationCallee is IUniswapV3SwapCallback {
     using SafeTransferLib for ERC20;
 
@@ -20,24 +19,27 @@ contract LiquidationCallee is IUniswapV3SwapCallback {
         uint24 fee = IUniswapV3Pool(msg.sender).fee();
         address pool = IUniswapV3Factory(FACTORY).getPool(token0, token1, fee);
         require(msg.sender == pool, "Caller must be pool");
-
+        console.log("Into the callback");
         // Get the borrower information from the data
         address borrowerAddress = abi.decode(data, (address));
 
         Borrower borrower = Borrower(borrowerAddress);
 
         uint256 loanAmount = amount0Delta != 0 ? uint256(amount0Delta) : uint256(amount1Delta);
+        console.log("hello");
 
         // Need to pay back the flash swap
         uint256 feeAmount = ((loanAmount * 3) / 997) + 1;
         uint256 amountToRepay = loanAmount + feeAmount;
         console.log("all computations done");
         if (amount0Delta > 0) { // We have some amount of token 0 because we swapped for token 1
-            console.log("going to try transferring token1");
-            ERC20(borrower.TOKEN1()).transferFrom(address(borrower.TOKEN1()), token1, amountToRepay);
+            console.log("About to attempt token transfer");
+            borrower.TOKEN1().approve(address(this), amountToRepay);
+            borrower.TOKEN1().transferFrom(address(borrower), msg.sender, amountToRepay);
         } else if (amount1Delta > 0) {
             console.log("going to try transferring token0");
-            ERC20(borrower.TOKEN0()).transferFrom(address(borrower.TOKEN0()), token0, amountToRepay);
+            borrower.TOKEN0().approve(address(this), amountToRepay);
+            borrower.TOKEN0().transferFrom(address(borrower), msg.sender, amountToRepay);
         }
     }
 }

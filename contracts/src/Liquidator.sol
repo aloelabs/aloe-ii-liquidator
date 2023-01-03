@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.15;
+pragma solidity ^0.8.17;
 
 // 3rd party imports
 import {ERC20, SafeTransferLib} from "solmate/utils/SafeTransferLib.sol";
@@ -13,6 +13,7 @@ import {TickMath} from "aloe-ii-core/libraries/TickMath.sol";
 import {Borrower, IManager} from "aloe-ii-core/Borrower.sol";
 import {Factory} from "aloe-ii-core/Factory.sol";
 import {Lender} from "aloe-ii-core/Lender.sol";
+import "./LiquidationCallee.sol";
 
 import "forge-std/console2.sol";
 
@@ -24,7 +25,7 @@ struct BorrowInfo {
     Lender lender1;
 }
 
-contract Liquidator is IManager {
+contract Liquidator is IManager, LiquidationCallee {
     using SafeTransferLib for ERC20;
 
     Factory public immutable FACTORY;
@@ -34,10 +35,11 @@ contract Liquidator is IManager {
     }
 
     function liquidate(Borrower borrower) external {
-        require(1 == 2, "got called");
         // If the borrower is insolvent, calling `liquidate` will give this contract
         // ownership of the `borrower`. Otherwise reverts.
+        console2.log("liquidation attempted");
         borrower.liquidate();
+        require(borrower.owner() == address(this), "Liquidate failed to transfer ownership");
 
         // Now that this contract has ownership, it's allowed to call `modify`. If all goes well,
         // control flow will move to the `callback` down below
@@ -50,12 +52,12 @@ contract Liquidator is IManager {
         override
         returns (Uniswap.Position[] memory positions, bool includeLenderReceipts)
     {
-        console2.log("hello from callback");
         // MARK: PREPARATION ------------------------------------------------------------------------------------------
 
         // This is an external function, meaning that anybody can call it. To be safe, we want to make sure that
         // the caller is actually a borrower.
         require(FACTORY.isBorrower(msg.sender));
+        // console2.log("Got here");
 
         // Create account variable so that we don't have to re-cast `msg.sender` every time
         Borrower account = Borrower(msg.sender);
@@ -66,6 +68,7 @@ contract Liquidator is IManager {
         borrowInfo.token1 = account.TOKEN1();
         borrowInfo.lender0 = account.LENDER0();
         borrowInfo.lender1 = account.LENDER1();
+        
 
         // Get the borrower's current Uniswap positions
         positions = account.getUniswapPositions();
@@ -112,29 +115,35 @@ contract Liquidator is IManager {
 
         bool needMoreToken0 = assets0 < liabilities0;
         bool needMoreToken1 = assets1 < liabilities1;
+        console2.log("needMoreToken0:", needMoreToken0);
+        console2.log("needMoreToken1:", needMoreToken1);
 
         bytes memory swapData = abi.encode(msg.sender);
-
+        console2.log("Hello");
         if (needMoreToken0 && needMoreToken1) {
+            console2.log("needMoreToken0 && needMoreToken1");
             // TODO -- If this happens, the account is truly insolvent and the protocol
             // is unhealthy. Not much we can do about it; probably just throw an informative error.
             require(needMoreToken0 && needMoreToken1, "Need both tokens to make solvent");
         } else if (needMoreToken0) {
+            console2.log("needMoreToken0");
             // TODO swap {N} units of token1 for {liabilities0 - assets0} units of token0
             // This will require you to call pool.swap(...) and implement a UniswapV3SwapCallback
             // that transfers token1 from `account` to `pool`. Note that `token0.transferFrom` will
             // only work if the allowances array is true at index 3.
             // Also, the swap recipient should be msg.sender.
             borrowInfo.pool.swap(msg.sender, false, int256(liabilities0 - assets0), TickMath.MAX_SQRT_RATIO - 1, swapData);
-        } else {
+        } else if (needMoreToken1) { // should be else if (needMoreToken1)
+            console2.log("else case");
             // TODO swap {N} units of token0 for (liabilities1 - assets1) units of token1
             // This will require you to call pool.swap(...) and implement a UniswapV3SwapCallback
             // that transfers token0 from `account` to `pool`. Note that `token1.transferFrom` will
             // only work if the allowances array is true at index 4.
             // Also, the swap recipient should be msg.sender.
-            borrowInfo.pool.swap(msg.sender, true, int256(liabilities1 - assets1), TickMath.MAX_SQRT_RATIO + 1, swapData);
+            // int256 amount = liabilities1 - assets1;
+            borrowInfo.pool.swap(msg.sender, true, int256(-2572), TickMath.MIN_SQRT_RATIO + 1, swapData);
         }
-
+        console2.log("Attempting to repay");
         account.repay(liabilities0, liabilities1);
     }
 }
