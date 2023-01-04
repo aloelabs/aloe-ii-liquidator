@@ -29,7 +29,7 @@ winston.configure({
         new winston.transports.Console({ handleExceptions: true }),
         new winston.transports.File({
         level: 'debug',
-        filename: 'txmanager-mev.log',
+        filename: 'liuqidation-bot-debug.log',
         maxsize: 100000,
         }),
         new SlackHook(process.env.SLACK_WEBHOOK!, { level: 'info' }),
@@ -67,7 +67,7 @@ function collect_borrowers(block: number, borrowers: Set<Address>) {
             // Now we need to get the the financial details of the Borrower
             borrowers.add(borrowerAddress);
         } else {
-            console.error(error);
+            winston.log("error", `Error when collecting borrowers: ${error}`);
         }
     })
 }
@@ -78,6 +78,9 @@ function scan(borrowers: Set<Address>): void {
         const solvent: boolean = await isSolvent(borrowerContract);
         if (!solvent) {
             borrowerContract.methods.liquidate().call().error(console.error);
+            winston.log('debug', `🔵 *Assumed ownership of* ${borrower}`);
+            // Actual liquidation logic here
+            // winston.log('debug', `🟢 *Liquidated borrower* ${borrower}`);
         }
     }))
     promise.catch(error => console.error(error));
@@ -88,6 +91,7 @@ async function isSolvent(borrowerContract: Contract): Promise<boolean> {
         await borrowerContract.methods.liquidate().estimateGas();
         return true;
     } catch (e) {
+        winston.log("error", `Error on solvency check: ${e}`);
         return false;
     }
 }
