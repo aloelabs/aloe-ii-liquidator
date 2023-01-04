@@ -7,8 +7,11 @@ import { BlockHeader } from 'web3-eth';
 import marginAccountLensJson from "./abis/MarginAccountLens.json";
 import marginAccountJson from "./abis/MarginAccount.json";
 
+import SlackHook from "./SlackHook";
+
 import dotenv from "dotenv";
 import dotenvExpand from "dotenv-expand";
+import winston from "winston";
 
 const config: dotenv.DotenvConfigOutput = dotenv.config();
 dotenvExpand.expand(config);
@@ -18,6 +21,21 @@ const web3: Web3 = new Web3(new Web3.providers.WebsocketProvider(process.env.GOE
 const FACTORY_ADDRESS: string = process.env.FACTORY_ADDRESS!;
 const CREATE_ACCOUNT_TOPIC_ID: string = process.env.CREATE_ACCOUNT_TOPIC_ID!;
 const ACCOUNT_INDEX: number = parseInt(process.env.ACCOUNT_INDEX!);
+
+// configure winston
+winston.configure({
+    format: winston.format.combine(winston.format.splat(), winston.format.simple()),
+    transports: [
+        new winston.transports.Console({ handleExceptions: true }),
+        new winston.transports.File({
+        level: 'debug',
+        filename: 'txmanager-mev.log',
+        maxsize: 100000,
+        }),
+        new SlackHook(process.env.SLACK_WEBHOOK!, { level: 'info' }),
+    ],
+    exitOnError: false,
+});
 
 type Address = string;
 
