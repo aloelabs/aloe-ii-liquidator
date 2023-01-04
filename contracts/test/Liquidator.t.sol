@@ -179,9 +179,25 @@ contract LiquidatorTest is Test, IManager {
         account.modify(this, data_two, allowances_two);
 
         skip(86400);
-        bytes calldata mocked_data = abi.encodeCall(pool.observe, (int24(5)));
-        bytes calldata mocked_return_data = abi.encode(uint160(2));
-        vm.mockCall(0x1F98431c8aD98523631AE4a59f267346ea31F984, mocked_data, mocked_return_data);
+
+        int56[] memory tickCumulatives = new int56[](2);
+        tickCumulatives[0] = 0;
+        // tickCumulatives[1] = 8307600;
+        tickCumulatives[1] = 10307600;
+
+        uint160[] memory secondsPerLiquidityCumulativeX128s = new uint160[](2);
+        secondsPerLiquidityCumulativeX128s[0] = 0;
+        secondsPerLiquidityCumulativeX128s[1] = 1;
+
+        uint32[] memory secondsAgos = new uint32[](2);
+        secondsAgos[0] = 1200;
+        secondsAgos[1] = 0;
+
+        vm.mockCall(
+            address(0x5777d92f208679DB4b9778590Fa3CAB3aC9e2168),
+            abi.encodeWithSelector(pool.observe.selector, (secondsAgos)), 
+            abi.encode(tickCumulatives, secondsPerLiquidityCumulativeX128s)
+        );
 
         liquidator.liquidate(account);
     }
