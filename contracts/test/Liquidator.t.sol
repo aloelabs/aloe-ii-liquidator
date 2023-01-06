@@ -180,10 +180,10 @@ contract LiquidatorTest is Test, IManager {
 
         skip(86400);
 
+        // Drops the ratio for token1/token0 to 0.5
         int56[] memory tickCumulatives = new int56[](2);
         tickCumulatives[0] = 0;
-        // tickCumulatives[1] = 8307600;
-        tickCumulatives[1] = 10307600;
+        tickCumulatives[1] = -367200000;
 
         uint160[] memory secondsPerLiquidityCumulativeX128s = new uint160[](2);
         secondsPerLiquidityCumulativeX128s[0] = 0;
@@ -195,9 +195,10 @@ contract LiquidatorTest is Test, IManager {
 
         vm.mockCall(
             address(0x5777d92f208679DB4b9778590Fa3CAB3aC9e2168),
-            abi.encodeWithSelector(pool.observe.selector, (secondsAgos)), 
+            abi.encodeWithSelector(pool.observe.selector, secondsAgos), 
             abi.encode(tickCumulatives, secondsPerLiquidityCumulativeX128s)
         );
+        
 
         liquidator.liquidate(account);
     }
