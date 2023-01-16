@@ -1,215 +1,375 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
-import "v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 
-// 1st party contract imports
-import {ERC20} from "solmate/utils/SafeTransferLib.sol";
+import {Math} from "openzeppelin-contracts/utils/math/Math.sol";
+import {Q96} from "aloe-ii-core/libraries/constants/Q.sol";
+import {LIQUIDATION_INCENTIVE} from "aloe-ii-core/libraries/constants/Constants.sol";
+import {zip} from "aloe-ii-core/libraries/Positions.sol";
+
 import {Borrower, IManager} from "aloe-ii-core/Borrower.sol";
-import {Factory} from "aloe-ii-core/Factory.sol";
-import {Lender} from "aloe-ii-core/Lender.sol";
-import {Uniswap} from "aloe-ii-core/libraries/Uniswap.sol";
 import {RateModel} from "aloe-ii-core/RateModel.sol";
-import {TickMath} from "aloe-ii-core/libraries/TickMath.sol";
-import "./Utils.sol";
+import {Prices} from "aloe-ii-core/libraries/BalanceSheet.sol";
+
+import {Lender} from "aloe-ii-core/Lender.sol";
+import {ERC20} from "solmate/tokens/ERC20.sol";
+
+import "v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 
 import "../src/Liquidator.sol";
 
+import {deploySingleLender} from "./Utils.sol";
+
 contract LiquidatorTest is Test, IManager {
 
-    // DAI/USDC pool (easy because 1 DAI = 1 USDC)
-    IUniswapV3Pool constant pool = IUniswapV3Pool(0x5777d92f208679DB4b9778590Fa3CAB3aC9e2168);
+    // DAI/ETH pool
+    IUniswapV3Pool constant pool = IUniswapV3Pool(0xC2e9F25Be6257c210d7Adf0D4Cd6E3E881ba25f8);
     ERC20 constant asset0 = ERC20(0x6B175474E89094C44Da98b954EedeAC495271d0F); // DAI
-    ERC20 constant asset1 = ERC20(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48); // USDC
+    ERC20 constant asset1 = ERC20(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2); // ETH
 
-    Borrower public account;
-    Liquidator public liquidator;
+    Liquidator immutable liquidator;
 
-    Factory public factory; 
-
-    Lender public lender0;
-    Lender public lender1;
+    Lender immutable lender0;
+    Lender immutable lender1;
+    Borrower immutable account;
 
     constructor() {
+        vm.createSelectFork(vm.rpcUrl("mainnet"));
+        vm.rollFork(15_348_451);
+
+        lender0 = deploySingleLender(asset0, address(this), new RateModel());
+        lender1 = deploySingleLender(asset1, address(this), new RateModel());
+        account = new Borrower(pool, lender0, lender1);
+        account.initialize(address(this));
+        liquidator = new Liquidator();
+
+        lender0.whitelist(address(account));
+        lender1.whitelist(address(account));
     }
 
     function setUp() public {
-        vm.createSelectFork(vm.envString("MAINNET_RPC_URL"));
-        vm.rollFork(15_348_451);
-        factory = new Factory(new RateModel());
-
-        factory.createMarket(pool);
-        liquidator = new Liquidator(factory);
-        (lender0, lender1, ) = factory.getMarket(pool);
-        account = Borrower(factory.createBorrower(pool, address(this)));
-        console.log(account.owner());
+        // deal to lender and deposit (so that there are assets to borrow)
+        deal(address(asset0), address(lender0), 10000e18); // DAI
+        deal(address(asset1), address(lender1), 10000e18); // WETH
+        lender0.deposit(10000e18, address(12345));
+        lender1.deposit(10000e18, address(12345));
     }
 
-    function callback(bytes calldata data)
-        external
-        returns (Uniswap.Position[] memory positions, bool includeLenderReceipts)
-    {
-        (uint128 borrow0, uint128 borrow1, uint128 repay0, uint128 repay1, uint256 withdraw0, uint256 withdraw1) = abi
-            .decode(data, (uint128, uint128, uint128, uint128, uint256, uint256));
-        Borrower _account = Borrower(msg.sender);
-        console.log(_account.owner());
-        
-        if (borrow0 != 0 || borrow1 != 0) {
-            _account.borrow(borrow0, borrow1, msg.sender);
-        }
-        if (repay0 != 0 || repay1 != 0) {
-            _account.repay(repay0, repay1);
-        }
-        if (withdraw0 != 0) asset0.transferFrom(msg.sender, address(this), withdraw0);
-        if (withdraw1 != 0) asset1.transferFrom(msg.sender, address(this), withdraw1);
-    }
+    function test_spec_repayDAI() public {
+        uint256 strain = 1;
+        // give the account 1 DAI
+        deal(address(asset0), address(account), 1e18);
 
-    function test_liquidationDoesNotOccur() public {
-        _prepareKitties();
-        // Add tokens to contract
-        deal(address(asset0), address(this), 10e6);
-        deal(address(asset1), address(this), 1e17);
-        // Add Margin
-        asset0.transfer(address(account), 10e6);
-        asset1.transfer(address(account), 1e17);
-
-        bytes memory data = abi.encode(100e6, 1e18, 0, 0, 0, 0);
-        bool[4] memory allowances;
-        console.log("About to call modify");
+        // borrow 200 DAI
+        bytes memory data = abi.encode(Action.BORROW, 200e18, 0);
+        bool[2] memory allowances;
         account.modify(this, data, allowances);
 
-        assertEq(lender0.borrowBalance(address(account)), 100e6);
-        assertEq(lender1.borrowBalance(address(account)), 1e18);
-        assertEq(asset0.balanceOf(address(account)), 10e6 + 100e6);
-        assertEq(asset1.balanceOf(address(account)), 1e17 + 1e18);
-        vm.expectRevert("Liquidate failed to transfer ownership");
-        liquidator.liquidate(account);
+        assertEq(lender0.borrowBalance(address(account)), 200e18);
+        assertEq(asset0.balanceOf(address(account)), 201e18);
+
+        vm.expectRevert(bytes("Aloe: already healthy"));
+        liquidator.liquidate(account, bytes(""), strain);
+
+        setInterest(lender0, 10010);
+
+        assertEq(lender0.borrowBalance(address(account)), 200.2e18);
+
+        // MARK: actual command
+        liquidator.liquidate(account, bytes(""), strain);
+
+        assertEq(lender0.borrowBalance(address(account)), 0);
+        assertEq(asset0.balanceOf(address(account)), 0.8e18);
     }
 
-    function test_liquidationOccurs_LenderAccuresInterest() public {
-        _prepareKitties();
-        // Add tokens to contract
-        deal(address(asset0), address(this), 10e6);
-        deal(address(asset1), address(this), 1e17);
+    function test_spec_repayETH() public {
+        uint256 strain = 1;
+        // give the account 0.1 ETH
+        deal(address(asset1), address(account), 0.1e18);
 
-        // Add Margin
-        asset0.transfer(address(account), 10e6);
-        asset1.transfer(address(account), 1e17);
-
-        bytes memory data = abi.encode(100e6, 1e18, 0, 0, 0, 0);
-        bool[4] memory allowances;
+        // borrow 20 ETH
+        bytes memory data = abi.encode(Action.BORROW, 0, 20e18);
+        bool[2] memory allowances;
         account.modify(this, data, allowances);
 
-        assertEq(lender0.borrowBalance(address(account)), 100e6);
-        assertEq(lender1.borrowBalance(address(account)), 1e18);
-        assertEq(asset0.balanceOf(address(account)), 10e6 + 100e6);
-        assertEq(asset1.balanceOf(address(account)), 1e17 + 1e18);
+        assertEq(lender1.borrowBalance(address(account)), 20e18);
+        assertEq(asset1.balanceOf(address(account)), 20.1e18);
 
-        skip(86400); // seconds
-        lender0.accrueInterest();
-        lender1.accrueInterest();
+        vm.expectRevert(bytes("Aloe: already healthy"));
+        liquidator.liquidate(account, bytes(""), strain);
 
-        uint256 liabilities0 = lender0.borrowBalance(address(account));
-        uint256 liabilities1 = lender1.borrowBalance(address(account));
-        uint256 assets0 = asset0.balanceOf(address(account));
-        uint256 assets1 = asset1.balanceOf(address(account));
+        setInterest(lender1, 10010);
 
-        bytes memory data_two = abi.encode(
-            0,
-            0,
-            0,
-            0,
-            assets0 - ((liabilities0 * 1.005e8) / 1e8),
-            assets1 - ((liabilities1 * 1.005e8) / 1e8)
-        );
-        bool[4] memory allowances_two;
-        allowances_two[0] = true;
-        allowances_two[1] = true;
-        account.modify(this, data_two, allowances_two);
+        assertEq(lender1.borrowBalance(address(account)), 20.02e18);
 
-        for (uint i = 0; i < 189; i++) {
-            skip(86400);
-            lender0.accrueInterest();
-            lender1.accrueInterest();
+        // MARK: actual command
+        liquidator.liquidate(account, bytes(""), strain);
+
+        assertEq(lender1.borrowBalance(address(account)), 0);
+        assertEq(asset1.balanceOf(address(account)), 0.08e18);
+    }
+
+    function test_spec_repayDAIAndETH() public {
+        uint256 strain = 1;
+        // give the account 1 DAI and 0.1 ETH
+        deal(address(asset0), address(account), 1e18);
+        deal(address(asset1), address(account), 0.1e18);
+
+        // borrow 200 DAI and 20 ETH
+        bytes memory data = abi.encode(Action.BORROW, 200e18, 20e18);
+        bool[2] memory allowances;
+        account.modify(this, data, allowances);
+
+        assertEq(lender0.borrowBalance(address(account)), 200e18);
+        assertEq(lender1.borrowBalance(address(account)), 20e18);
+        assertEq(asset0.balanceOf(address(account)), 201e18);
+        assertEq(asset1.balanceOf(address(account)), 20.1e18);
+
+        vm.expectRevert(bytes("Aloe: already healthy"));
+        liquidator.liquidate(account, bytes(""), strain);
+
+        setInterest(lender0, 10010);
+        setInterest(lender1, 10010);
+
+        assertEq(lender0.borrowBalance(address(account)), 200.2e18);
+        assertEq(lender1.borrowBalance(address(account)), 20.02e18);
+
+        // MARK: actual command
+        liquidator.liquidate(account, bytes(""), strain);
+
+        assertEq(lender0.borrowBalance(address(account)), 0);
+        assertEq(lender1.borrowBalance(address(account)), 0);
+        assertEq(asset0.balanceOf(address(account)), 0.8e18);
+        assertEq(asset1.balanceOf(address(account)), 0.08e18);
+    }
+
+    function test_spec_repayDAIAndETHWithUniswapPosition() public {
+        uint256 strain = 1;
+        // give the account 1 DAI and 0.1 ETH
+        deal(address(asset0), address(account), 1.1e18);
+        deal(address(asset1), address(account), 0.1e18);
+
+        // borrow 200 DAI and 20 ETH
+        bytes memory data = abi.encode(Action.BORROW, 200e18, 20e18);
+        bool[2] memory allowances;
+        account.modify(this, data, allowances);
+
+        // create a small Uniswap position
+        data = abi.encode(Action.UNI_DEPOSIT, 0, 0);
+        account.modify(this, data, allowances);
+
+        assertEq(lender0.borrowBalance(address(account)), 200e18);
+        assertEq(lender1.borrowBalance(address(account)), 20e18);
+
+        vm.expectRevert(bytes("Aloe: already healthy"));
+        liquidator.liquidate(account, bytes(""), strain);
+
+        setInterest(lender0, 10010);
+        setInterest(lender1, 10010);
+
+        assertEq(lender0.borrowBalance(address(account)), 200.2e18);
+        assertEq(lender1.borrowBalance(address(account)), 20.02e18);
+
+        // MARK: actual command
+        liquidator.liquidate(account, bytes(""), strain);
+
+        assertEq(lender0.borrowBalance(address(account)), 0);
+        assertEq(lender1.borrowBalance(address(account)), 0);
+        assertEq(asset0.balanceOf(address(account)), 899999999999999999);
+        assertEq(asset1.balanceOf(address(account)), 79999999999999999);
+
+        (uint128 liquidity, , , , ) = pool.positions(keccak256(abi.encodePacked(address(account), int24(-75600), int24(-75540))));
+        assertEq(liquidity, 0);
+    }
+
+    function test_spec_interestTriggerRepayDAIUsingSwap(uint8 strain) public {
+        strain = (strain % 8) + 1;
+
+        // give the account 1 WETH
+        deal(address(asset1), address(account), 1e18);
+
+        // borrow 1689.12 DAI
+        bytes memory data = abi.encode(Action.BORROW, 1689.12e18, 0);
+        bool[2] memory allowances;
+        account.modify(this, data, allowances);
+
+        assertEq(lender0.borrowBalance(address(account)), 1689.12e18);
+        assertEq(asset0.balanceOf(address(account)), 1689.12e18);
+        assertEq(asset1.balanceOf(address(account)), 1e18);
+
+        // withdraw 1689.12 DAI
+        data = abi.encode(Action.WITHDRAW, 1689.12e18, 0);
+        allowances[0] = true;
+        account.modify(this, data, allowances);
+
+        assertEq(asset0.balanceOf(address(account)), 0);
+
+        vm.expectRevert(bytes("Aloe: already healthy"));
+        liquidator.liquidate(account, bytes(""), strain);
+
+        setInterest(lender0, 10010);
+
+        assertEq(lender0.borrowBalance(address(account)), 1690809120000000000000);
+
+        Prices memory prices = account.getPrices();
+        uint256 price = Math.mulDiv(prices.c, prices.c, Q96);
+        uint256 assets1 = Math.mulDiv(1690809120000000000000 / strain, price, Q96);
+        assets1 += assets1 / LIQUIDATION_INCENTIVE;
+
+        // MARK: actual command
+        data = abi.encode(assets1);
+        liquidator.liquidate(account, data, strain);
+
+        assertEq(lender0.borrowBalance(address(account)), 1690809120000000000000 - 1690809120000000000000 / strain);
+        assertGt(asset1.balanceOf(address(liquidator)), 0);
+    }
+
+    function test_spec_interestTriggerRepayETHUsingSwap(uint8 scale, uint8 strain) public {
+        // These tests are forked, so we don't want to spam the RPC with too many fuzzing values
+        strain = (strain % 8) + 1;
+
+        Prices memory prices = account.getPrices();
+        uint256 borrow1 = 1e18 * ((scale % 4) + 1); // Same concern here
+        {
+            uint256 effectiveLiabilities1 = borrow1 + borrow1 / 200 + borrow1 / 20;
+            uint256 margin0 = Math.mulDiv(effectiveLiabilities1, Q96, Math.mulDiv(prices.a, prices.a, Q96));
+            // give the account its margin
+            deal(address(asset0), address(account), margin0 + 1);
         }
 
-        // Need more token1, but not more token0
-        liquidator.liquidate(account);
-    }
-
-    function test_liquidationOccurs_ExchangeRateDrops() public {
-        _prepareKitties();
-
-        // Add tokens to contract
-        deal(address(asset0), address(this), 10e6);
-        deal(address(asset1), address(this), 1e17);
-
-        // Add Margin
-        asset0.transfer(address(account), 10e6);
-        asset1.transfer(address(account), 1e17);
-
-        bytes memory data = abi.encode(100e6, 1e18, 0, 0, 0, 0);
-        bool[4] memory allowances;
+        // borrow ETH
+        bytes memory data = abi.encode(Action.BORROW, 0, borrow1);
+        bool[2] memory allowances;
         account.modify(this, data, allowances);
 
-        assertEq(lender0.borrowBalance(address(account)), 100e6);
-        assertEq(lender1.borrowBalance(address(account)), 1e18);
-        assertEq(asset0.balanceOf(address(account)), 10e6 + 100e6);
-        assertEq(asset1.balanceOf(address(account)), 1e17 + 1e18);
+        assertEq(lender1.borrowBalance(address(account)), borrow1);
+        assertEq(asset1.balanceOf(address(account)), borrow1);
 
-        skip(86400); // seconds
+        // withdraw ETH
+        data = abi.encode(Action.WITHDRAW, 0, borrow1);
+        allowances[1] = true;
+        account.modify(this, data, allowances);
 
-        uint256 liabilities0 = lender0.borrowBalance(address(account));
-        uint256 liabilities1 = lender1.borrowBalance(address(account));
-        uint256 assets0 = asset0.balanceOf(address(account));
-        uint256 assets1 = asset1.balanceOf(address(account));
+        assertEq(asset1.balanceOf(address(account)), 0);
 
-        bytes memory data_two = abi.encode(
-            0,
-            0,
-            0,
-            0,
-            assets0 - ((liabilities0 * 1.005e8) / 1e8),
-            assets1 - ((liabilities1 * 1.005e8) / 1e8)
-        );
-        bool[4] memory allowances_two;
-        allowances_two[0] = true;
-        allowances_two[1] = true;
-        account.modify(this, data_two, allowances_two);
+        vm.expectRevert(bytes("Aloe: already healthy"));
+        liquidator.liquidate(account, bytes(""), 1);
 
-        skip(86400);
+        setInterest(lender1, 10010);
+        borrow1 = borrow1 * 10010 / 10000;
 
-        // Drops the ratio for token1/token0 to 0.5
-        int56[] memory tickCumulatives = new int56[](2);
-        tickCumulatives[0] = 0;
-        tickCumulatives[1] = -367200000;
+        assertEq(lender1.borrowBalance(address(account)), borrow1);
 
-        uint160[] memory secondsPerLiquidityCumulativeX128s = new uint160[](2);
-        secondsPerLiquidityCumulativeX128s[0] = 0;
-        secondsPerLiquidityCumulativeX128s[1] = 1;
+        vm.expectRevert();
+        liquidator.liquidate(account, bytes(""), 0);
 
-        uint32[] memory secondsAgos = new uint32[](2);
-        secondsAgos[0] = 1200;
-        secondsAgos[1] = 0;
+        uint256 price = Math.mulDiv(prices.c, prices.c, Q96);
+        uint256 assets0 = Math.mulDiv(borrow1 / strain, Q96, price);
+        assets0 += assets0 / LIQUIDATION_INCENTIVE;
 
-        vm.mockCall(
-            address(0x5777d92f208679DB4b9778590Fa3CAB3aC9e2168),
-            abi.encodeWithSelector(pool.observe.selector, secondsAgos), 
-            abi.encode(tickCumulatives, secondsPerLiquidityCumulativeX128s)
-        );
-        
+        // MARK: actual command
+        data = abi.encode(assets0);
+        liquidator.liquidate(account, bytes(""), strain);
 
-        liquidator.liquidate(account);
+        assertApproxEqAbs(lender1.borrowBalance(address(account)), borrow1 - borrow1 / strain, 1);
+        assertGt(asset0.balanceOf(address(liquidator)), 0);
     }
 
-    function _prepareKitties() private {
-        address alice = makeAddr("alice");
+    function test_spec_priceTriggerRepayDAIUsingSwap() public {
+        uint256 strain = 1;
 
-        deal(address(asset0), address(lender0), 10000e6);
-        lender0.deposit(10000e6, alice);
+        Prices memory prices = account.getPrices();
+        uint256 borrow0 = 1000e18;
+        {
+            uint256 effectiveLiabilities0 = borrow0 + borrow0 / 200;
+            uint256 margin1 = Math.mulDiv(effectiveLiabilities0, Math.mulDiv(prices.b, prices.b, Q96), Q96);
+            margin1 += Math.mulDiv(borrow0, Math.mulDiv(prices.c, prices.c, Q96), Q96) / 20;
+            // give the account its margin
+            deal(address(asset1), address(account), margin1 + 1);
+        }
 
-        deal(address(asset1), address(lender1), 3e18);
-        lender1.deposit(3e18, alice);
+        // borrow DAI
+        bytes memory data = abi.encode(Action.BORROW, borrow0, 0);
+        bool[2] memory allowances;
+        account.modify(this, data, allowances);
+
+        assertEq(lender0.borrowBalance(address(account)), borrow0);
+        assertEq(asset0.balanceOf(address(account)), borrow0);
+
+        // withdraw DAI
+        data = abi.encode(Action.WITHDRAW, borrow0, 0);
+        allowances[0] = true;
+        account.modify(this, data, allowances);
+
+        assertEq(asset0.balanceOf(address(account)), 0);
+
+        vm.expectRevert(bytes("Aloe: already healthy"));
+        liquidator.liquidate(account, bytes(""), 1);
+
+        // increase price of DAI by 1 tick
+        {
+            uint32[] memory t = new uint32[](2);
+            t[0] = 1200;
+            t[1] = 0;
+            (int56[] memory tickCumulatives, uint160[] memory secondsPerLiquidityCumulativeX128s) = pool.observe(t);
+            int24 newTick = TickMath.getTickAtSqrtRatio(prices.c) + 1;
+            tickCumulatives[0] = 0;
+            tickCumulatives[1] = int56(newTick) * 1200;
+            vm.mockCall(
+                address(pool),
+                abi.encodeWithSelector(pool.observe.selector),
+                abi.encode(tickCumulatives, secondsPerLiquidityCumulativeX128s)
+            );
+        }
+
+        prices = account.getPrices();
+
+        uint256 price = Math.mulDiv(prices.c, prices.c, Q96);
+        uint256 assets1 = Math.mulDiv(borrow0 / strain, price, Q96);
+        assets1 += assets1 / LIQUIDATION_INCENTIVE;
+
+        // MARK: actual command
+        // account.liquidate(ILiquidator(address(this)), data, strain);
+        liquidator.liquidate(account, bytes(""), strain);
+
+        assertEq(lender0.borrowBalance(address(account)), borrow0 - borrow0 / strain);
+        assertGt(asset1.balanceOf(address(liquidator)), 0);
+    }
+
+    enum Action {
+        WITHDRAW,
+        BORROW,
+        UNI_DEPOSIT
+    }
+
+    // IManager
+    function callback(
+        bytes calldata data
+    ) external returns (uint144 positions) {
+        require(msg.sender == address(account));
+
+        (Action action, uint256 amount0, uint256 amount1) = abi.decode(data, (Action, uint256, uint256));
+
+        if (action == Action.WITHDRAW) {
+            if (amount0 > 0) asset0.transferFrom(address(account), address(this), amount0);
+            if (amount1 > 0) asset1.transferFrom(address(account), address(this), amount1);
+        } else if (action == Action.BORROW) {
+            account.borrow(amount0, amount1, msg.sender);
+        } else if (action == Action.UNI_DEPOSIT) {
+            account.uniswapDeposit(-75600, -75540, 200000000000000000);
+            positions = zip([-75600, -75540, 0, 0, 0, 0]);
+        }
+    }
+
+    function setInterest(Lender lender, uint256 amount) private {
+        bytes32 ID = bytes32(uint256(1));
+        uint256 slot1 = uint256(vm.load(address(lender), ID));
+
+        uint256 borrowBase = slot1 % (1 << 184);
+        uint256 borrowIndex = slot1 >> 184;
+
+        uint256 newSlot1 = borrowBase + ((borrowIndex * amount / 10_000) << 184);
+        vm.store(address(lender), ID, bytes32(newSlot1));
     }
 }
