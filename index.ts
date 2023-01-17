@@ -29,7 +29,7 @@ winston.configure({
         new winston.transports.Console({ handleExceptions: true }),
         new winston.transports.File({
         level: 'debug',
-        filename: 'liuqidation-bot-debug.log',
+        filename: 'liquidation-bot-debug.log',
         maxsize: 100000,
         }),
         new SlackHook(process.env.SLACK_WEBHOOK!, { level: 'info' }),
