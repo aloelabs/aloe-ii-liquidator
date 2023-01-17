@@ -1,4 +1,4 @@
-import nfetch from 'node-fetch';
+import axios from 'axios';
 import winston from 'winston';
 import Transport from 'winston-transport';
 
@@ -12,13 +12,7 @@ export default class SlackHook extends Transport {
 
   public log(info: any, callback: () => void): void {
     const payload = { mrkdwn: true, text: info.message };
-
-    const params = {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    };
-    nfetch(this.webhookURL, params).then(() => callback());
+    axios.post(this.webhookURL, payload).then(() => callback());
   }
 }
 
