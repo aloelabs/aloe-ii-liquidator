@@ -214,15 +214,24 @@ contract LiquidatorTest is Test, IManager {
 
         Prices memory prices = account.getPrices();
         uint256 price = Math.mulDiv(prices.c, prices.c, Q96);
-        uint256 assets1 = Math.mulDiv(1690809120000000000000 / strain, price, Q96);
-        assets1 += assets1 / LIQUIDATION_INCENTIVE;
+        uint256 expected0 = 1690809120000000000000 / strain;
+        uint256 assets1 = Math.mulDiv(expected0, price, Q96);
+        uint256 incentive1 = assets1 / LIQUIDATION_INCENTIVE;
+        assets1 += incentive1;
 
         // MARK: actual command
-        liquidator.liquidate(account, abi.encode(address(this)), strain);
+        // Liquidator starts off with no funds
+        assertEq(asset0.balanceOf(address(0xB0B)), 0);
+        assertEq(asset1.balanceOf(address(0xB0B)), 0);
+
+        liquidator.liquidate(account, abi.encode(address(0xB0B)), strain);
 
         assertEq(lender0.borrowBalance(address(account)), 1690809120000000000000 - 1690809120000000000000 / strain);
+        assertEq(asset0.balanceOf(address(liquidator)), 0);
         assertEq(asset1.balanceOf(address(liquidator)), 0);
-        assertGt(asset1.balanceOf(address(this)), 0);
+
+        assertEq(asset0.balanceOf(address(0xB0B)), 0);
+        assertGt(asset1.balanceOf(address(0xB0B)), incentive1 * 90 / 100);
     }
 
     function test_spec_interestTriggerRepayETHUsingSwap(uint8 scale, uint8 strain) public {

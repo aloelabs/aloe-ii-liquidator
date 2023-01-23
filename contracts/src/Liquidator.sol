@@ -36,9 +36,9 @@ contract Liquidator is ILiquidator, IUniswapV3SwapCallback {
             TickMath.MAX_SQRT_RATIO - 1,
             bytes("")
         );
-        address originalCaller = abi.decode(data, (address));
+        address rewardRecipient = abi.decode(data, (address));
         // transfer to the original caller
-        borrower.TOKEN1().transfer(originalCaller, assets1 - uint256(amount1));
+        borrower.TOKEN1().transfer(rewardRecipient, assets1 - uint256(amount1));
     }
 
     function callback1(bytes calldata data, uint256 assets0, uint256 liabilities1) external {
@@ -53,9 +53,9 @@ contract Liquidator is ILiquidator, IUniswapV3SwapCallback {
             bytes("")
         );
         // transfer reward to caller
-        address originalCaller = abi.decode(data, (address));
+        address rewardRecipient = abi.decode(data, (address));
         // transfer to the original caller
-        borrower.TOKEN0().transfer(originalCaller, assets0 - uint256(amount0));
+        borrower.TOKEN0().transfer(rewardRecipient, assets0 - uint256(amount0));
     }
 
      function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) public override {
