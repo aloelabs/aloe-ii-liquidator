@@ -7,8 +7,11 @@ import { BlockHeader } from 'web3-eth';
 import marginAccountLensJson from "./abis/MarginAccountLens.json";
 import marginAccountJson from "./abis/MarginAccount.json";
 
+import SlackHook from "./SlackHook";
+
 import dotenv from "dotenv";
 import dotenvExpand from "dotenv-expand";
+import winston from "winston";
 
 const config: dotenv.DotenvConfigOutput = dotenv.config();
 dotenvExpand.expand(config);
@@ -18,6 +21,21 @@ const web3: Web3 = new Web3(new Web3.providers.WebsocketProvider(process.env.GOE
 const FACTORY_ADDRESS: string = process.env.FACTORY_ADDRESS!;
 const CREATE_ACCOUNT_TOPIC_ID: string = process.env.CREATE_ACCOUNT_TOPIC_ID!;
 const ACCOUNT_INDEX: number = parseInt(process.env.ACCOUNT_INDEX!);
+
+// configure winston
+winston.configure({
+    format: winston.format.combine(winston.format.splat(), winston.format.simple()),
+    transports: [
+        new winston.transports.Console({ handleExceptions: true }),
+        new winston.transports.File({
+        level: 'debug',
+        filename: 'liquidation-bot-debug.log',
+        maxsize: 100000,
+        }),
+        new SlackHook(process.env.SLACK_WEBHOOK!, { level: 'info' }),
+    ],
+    exitOnError: false,
+});
 
 type Address = string;
 
@@ -49,7 +67,7 @@ function collect_borrowers(block: number, borrowers: Set<Address>) {
             // Now we need to get the the financial details of the Borrower
             borrowers.add(borrowerAddress);
         } else {
-            console.error(error);
+            winston.log("error", `Error when collecting borrowers: ${error}`);
         }
     })
 }
@@ -60,6 +78,9 @@ function scan(borrowers: Set<Address>): void {
         const solvent: boolean = await isSolvent(borrowerContract);
         if (!solvent) {
             borrowerContract.methods.liquidate().call().error(console.error);
+            winston.log('debug', `🔵 *Assumed ownership of* ${borrower}`);
+            // Actual liquidation logic here
+            // winston.log('debug', `🟢 *Liquidated borrower* ${borrower}`);
         }
     }))
     promise.catch(error => console.error(error));
@@ -70,6 +91,7 @@ async function isSolvent(borrowerContract: Contract): Promise<boolean> {
         await borrowerContract.methods.liquidate().estimateGas();
         return true;
     } catch (e) {
+        winston.log("error", `Error on solvency check: ${e}`);
         return false;
     }
 }
