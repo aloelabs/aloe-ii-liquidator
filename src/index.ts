@@ -4,8 +4,8 @@ import { Contract } from "web3-eth-contract";
 import { AbiItem } from 'web3-utils';
 import { BlockHeader } from 'web3-eth';
 
-import marginAccountLensJson from "./abis/MarginAccountLens.json";
-import marginAccountJson from "./abis/MarginAccount.json";
+import marginAccountLensJson from "../abis/MarginAccountLens.json";
+import marginAccountJson from "../abis/MarginAccount.json";
 
 import SlackHook from "./SlackHook";
 
