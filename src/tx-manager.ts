@@ -9,7 +9,8 @@ dotenvExpand.expand(config);
 
 const web3: Web3 = new Web3(new Web3.providers.WebsocketProvider(process.env.GOERLI_TESTNET_ENDPOINT!));
 
-const MAX_RETRIES_ALLOWED = 5;
+const MAX_RETRIES_ALLOWED: number = 5;
+const GAS_INCREASE_NUMBER: number = 1.10;
 
 type TxInfo = {
     borrower: string;
@@ -37,7 +38,7 @@ class TXManager {
         this.pendingTransactions = new Map<string, TxInfo>();
     }
 
-    public async init(shouldTransitionIncognito: boolean = false): Promise<void> {
+    public async init(): Promise<void> {
         const { address } = await web3.eth.accounts.create();
         this.currentNonce = await web3.eth.getTransactionCount(address);
         this.address = address;
@@ -53,6 +54,8 @@ class TXManager {
             // Check the map to see if we already have a transaction info for this borrower
             let liquidationInfo: TxInfo | undefined = this.pendingTransactions.get(borrower)
             if (liquidationInfo == undefined) {
+                // Only want to increase currentNonce if we're about to do a new liquidation
+                this.currentNonce++;
                 liquidationInfo = {
                     borrower: borrower,
                     nonce: this.currentNonce,
@@ -61,7 +64,7 @@ class TXManager {
                     retries: 0
                 }
             } else {
-                liquidationInfo["gas"] = liquidationInfo["gas"] * 1.10 > this.gasPriceMaximum ? liquidationInfo["gas"] * 1.10 : this.gasPriceMaximum;
+                liquidationInfo["gas"] = liquidationInfo["gas"] * GAS_INCREASE_NUMBER > this.gasPriceMaximum ? liquidationInfo["gas"] * GAS_INCREASE_NUMBER : this.gasPriceMaximum;
                 liquidationInfo["retries"]++;
                 liquidationInfo["timeSent"] = new Date().getTime();
             }
@@ -99,7 +102,6 @@ class TXManager {
                     winston.log("error", `Received error for borrower: ${borrower} with message: ${error.message}`)
                     this.addLiquidatableAccount(borrower);
                 });
-            this.currentNonce++;
         }
     }
 
@@ -112,7 +114,6 @@ class TXManager {
         let reason: string = "";
         if (result && result.substring(138)) {
           reason = web3.utils.toAscii(result.substring(138))
-          return reason
         }
         return reason
     }
