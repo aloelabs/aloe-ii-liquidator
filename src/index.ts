@@ -11,7 +11,7 @@ import SlackHook from "./SlackHook";
 import dotenv from "dotenv";
 import dotenvExpand from "dotenv-expand";
 import winston from "winston";
-import TXManager from "./tx-manager";
+import TXManager from "./TxManager";
 
 const config: dotenv.DotenvConfigOutput = dotenv.config();
 dotenvExpand.expand(config);
