@@ -4,24 +4,31 @@ import dotenv from "dotenv";
 import dotenvExpand from "dotenv-expand";
 import winston from "winston";
 import { TransactionConfig, TransactionReceipt } from "web3-eth"
+import { Contract } from "web3-eth-contract";
+import { AbiItem } from 'web3-utils';
+import liquidatorABIJson from "../abis/MarginAccountLens.json";
+
 const config: dotenv.DotenvConfigOutput = dotenv.config();
 dotenvExpand.expand(config);
 
 const web3: Web3 = new Web3(new Web3.providers.WebsocketProvider(process.env.GOERLI_TESTNET_ENDPOINT!));
 
+const LIQUIDATOR_CONTRACT: Contract = new web3.eth.Contract(liquidatorABIJson as AbiItem[]);
+
 const MAX_RETRIES_ALLOWED: number = 5;
 const GAS_INCREASE_NUMBER: number = 1.10;
+const MAX_PENDING_TIME_IN_SECONDS: number = 30;
 
-type TxInfo = {
+type LiquidationTxInfo = {
     borrower: string;
     nonce: number;
-    gas: number;
+    gasPrice: string;
     timeSent: number;
     retries: number;
 }
 
 // TODO: get Liquidator contract address after deploying contract
-const LIQUIDATOR_CONTRACT_ADDRESS: string = "0x0"
+const LIQUIDATOR_CONTRACT_ADDRESS: string = process.env.LIQUIDATOR_ADDRESS!
 
 export default class TXManager {
 
@@ -29,13 +36,12 @@ export default class TXManager {
     private currentNonce: number = 0;
     private address: string = "";
 
-    private gasPriceMinimum: number = 0;
-    private gasPriceMaximum: number = 0;
-    private pendingTransactions: Map<string, TxInfo>;
+    private gasPriceMaximum: string = "2000000";
+    private pendingTransactions: Map<string, LiquidationTxInfo>;
 
     constructor() {
         this.queue = [];
-        this.pendingTransactions = new Map<string, TxInfo>();
+        this.pendingTransactions = new Map<string, LiquidationTxInfo>();
     }
 
     public async init(): Promise<void> {
@@ -53,32 +59,38 @@ export default class TXManager {
         for (let i = 0; i < this.queue.length; i++) {
             const borrower: string = this.queue.shift()!
             // Check the map to see if we already have a transaction info for this borrower
-            let liquidationInfo: TxInfo | undefined = this.pendingTransactions.get(borrower)
-            if (liquidationInfo == undefined) {
+            let liquidationTxInfo: LiquidationTxInfo | undefined = this.pendingTransactions.get(borrower)
+            if (liquidationTxInfo == undefined) {
                 // Only want to increase currentNonce if we're about to do a new liquidation
                 this.currentNonce++;
-                liquidationInfo = {
+                const currentGasPrice: string = await web3.eth.getGasPrice();
+                liquidationTxInfo = {
                     borrower: borrower,
                     nonce: this.currentNonce,
-                    gas: this.gasPriceMinimum,
+                    gasPrice: Math.min(parseInt(currentGasPrice), parseInt(this.gasPriceMaximum)).toString(),
                     timeSent: new Date().getTime(),
                     retries: 0
                 }
             } else {
-                liquidationInfo["gas"] = liquidationInfo["gas"] * GAS_INCREASE_NUMBER > this.gasPriceMaximum ? liquidationInfo["gas"] * GAS_INCREASE_NUMBER : this.gasPriceMaximum;
-                liquidationInfo["retries"]++;
-                liquidationInfo["timeSent"] = new Date().getTime();
+                if (parseInt(liquidationTxInfo.gasPrice) * GAS_INCREASE_NUMBER <= parseInt(this.gasPriceMaximum)) {
+                    const newGasPrice: number = parseInt(liquidationTxInfo.gasPrice) * GAS_INCREASE_NUMBER
+                    liquidationTxInfo.gasPrice = newGasPrice.toString();
+                }
+
+                liquidationTxInfo["retries"]++;
+                liquidationTxInfo["timeSent"] = new Date().getTime();
             }
-            if (liquidationInfo["retries"] > MAX_RETRIES_ALLOWED) {
+            if (liquidationTxInfo["retries"] > MAX_RETRIES_ALLOWED) {
                 winston.log("debug", `Exceeded maximum amount of retries when attempting to liquidate borrower: ${borrower}`);
                 continue;
             }
             const transactionConfig: TransactionConfig = {
                 from: this.address,
                 to: LIQUIDATOR_CONTRACT_ADDRESS,
-                gas: liquidationInfo["gas"],
-                nonce: liquidationInfo["nonce"],
-                data: borrower
+                gasPrice: liquidationTxInfo["gasPrice"],
+                gas: this.gasPriceMaximum,
+                nonce: liquidationTxInfo["nonce"],
+                data: LIQUIDATOR_CONTRACT.methods.liquidate(borrower).encodeABI()
             }
 
             web3.eth.sendTransaction(transactionConfig)
@@ -121,11 +133,11 @@ export default class TXManager {
 
     public pokePendingTransactions() {
         // For transactions that have been pending longer than 30 seconds, add them to the queue
-        this.pendingTransactions.forEach((liquidationInfo: TxInfo, borrower: string) => {
+        this.pendingTransactions.forEach((liquidationInfo: LiquidationTxInfo, borrower: string) => {
             const currentTime: number = new Date().getTime();
             // Check if 30 seconds has passed
             const elapsedTimeInSeconds: number = (currentTime - liquidationInfo["timeSent"]) / 1000
-            if (elapsedTimeInSeconds > 30) {
+            if (elapsedTimeInSeconds > MAX_PENDING_TIME_IN_SECONDS) {
                 this.queue.push(borrower);
             }
         })

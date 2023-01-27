@@ -4,7 +4,6 @@ import { Contract } from "web3-eth-contract";
 import { AbiItem } from 'web3-utils';
 import { BlockHeader } from 'web3-eth';
 
-import marginAccountLensJson from "../abis/MarginAccountLens.json";
 import marginAccountJson from "../abis/MarginAccount.json";
 
 import SlackHook from "./SlackHook";
@@ -87,7 +86,7 @@ function scan(borrowers: Set<Address>): void {
         const borrowerContract: Contract = new web3.eth.Contract(marginAccountJson as AbiItem[], borrower);
         const solvent: boolean = await isSolvent(borrowerContract);
         if (!solvent) {
-            borrowerContract.methods.liquidate().call().error(console.error);
+
             winston.log('debug', `🔵 *Assumed ownership of* ${borrower}`);
             txManager.addLiquidatableAccount(borrower);
             // Actual liquidation logic here
