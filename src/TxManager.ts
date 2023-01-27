@@ -6,14 +6,14 @@ import winston from "winston";
 import { TransactionConfig, TransactionReceipt } from "web3-eth"
 import { Contract } from "web3-eth-contract";
 import { AbiItem } from 'web3-utils';
-import liquidatorABIJson from "../abis/MarginAccountLens.json";
+import LiquidatorABIJson from "../abis/Liquidator.json";
 
 const config: dotenv.DotenvConfigOutput = dotenv.config();
 dotenvExpand.expand(config);
 
 const web3: Web3 = new Web3(new Web3.providers.WebsocketProvider(process.env.GOERLI_TESTNET_ENDPOINT!));
 
-const LIQUIDATOR_CONTRACT: Contract = new web3.eth.Contract(liquidatorABIJson as AbiItem[]);
+const LIQUIDATOR_CONTRACT: Contract = new web3.eth.Contract(LiquidatorABIJson as AbiItem[]);
 
 const MAX_RETRIES_ALLOWED: number = 5;
 const GAS_INCREASE_NUMBER: number = 1.10;
@@ -55,7 +55,7 @@ export default class TXManager {
         this.processLiquidatableCandidates();
     }
 
-    public processLiquidatableCandidates() {
+    public async processLiquidatableCandidates() {
         for (let i = 0; i < this.queue.length; i++) {
             const borrower: string = this.queue.shift()!
             // Check the map to see if we already have a transaction info for this borrower
