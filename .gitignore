@@ -3,6 +3,7 @@
 # solidity
 contracts/build/
 contracts/cache/
+broadcast
 
 # dependencies
 node_modules/

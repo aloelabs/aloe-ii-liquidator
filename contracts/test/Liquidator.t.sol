@@ -54,6 +54,8 @@ contract LiquidatorTest is Test, IManager {
         deal(address(asset1), address(lender1), 10000e18); // WETH
         lender0.deposit(10000e18, address(12345));
         lender1.deposit(10000e18, address(12345));
+
+        deal(address(account), account.ANTE() + 1 wei);
     }
 
     function test_spec_repayDAI() public {
@@ -69,7 +71,7 @@ contract LiquidatorTest is Test, IManager {
         assertEq(lender0.borrowBalance(address(account)), 200e18);
         assertEq(asset0.balanceOf(address(account)), 201e18);
 
-        vm.expectRevert(bytes("Aloe: already healthy"));
+        vm.expectRevert(bytes("Aloe: healthy"));
         liquidator.liquidate(account, abi.encode(address(this)), strain);
 
         setInterest(lender0, 10010);
@@ -96,7 +98,7 @@ contract LiquidatorTest is Test, IManager {
         assertEq(lender1.borrowBalance(address(account)), 20e18);
         assertEq(asset1.balanceOf(address(account)), 20.1e18);
 
-        vm.expectRevert(bytes("Aloe: already healthy"));
+        vm.expectRevert(bytes("Aloe: healthy"));
         liquidator.liquidate(account, abi.encode(address(this)), strain);
 
         setInterest(lender1, 10010);
@@ -126,7 +128,7 @@ contract LiquidatorTest is Test, IManager {
         assertEq(asset0.balanceOf(address(account)), 201e18);
         assertEq(asset1.balanceOf(address(account)), 20.1e18);
 
-        vm.expectRevert(bytes("Aloe: already healthy"));
+        vm.expectRevert(bytes("Aloe: healthy"));
         liquidator.liquidate(account, abi.encode(address(this)), strain);
 
         setInterest(lender0, 10010);
@@ -162,7 +164,7 @@ contract LiquidatorTest is Test, IManager {
         assertEq(lender0.borrowBalance(address(account)), 200e18);
         assertEq(lender1.borrowBalance(address(account)), 20e18);
 
-        vm.expectRevert(bytes("Aloe: already healthy"));
+        vm.expectRevert(bytes("Aloe: healthy"));
         liquidator.liquidate(account, abi.encode(address(this)), strain);
 
         setInterest(lender0, 10010);
@@ -205,7 +207,7 @@ contract LiquidatorTest is Test, IManager {
 
         assertEq(asset0.balanceOf(address(account)), 0);
 
-        vm.expectRevert(bytes("Aloe: already healthy"));
+        vm.expectRevert(bytes("Aloe: healthy"));
         liquidator.liquidate(account, abi.encode(address(this)), strain);
 
         setInterest(lender0, 10010);
@@ -218,6 +220,18 @@ contract LiquidatorTest is Test, IManager {
         uint256 assets1 = Math.mulDiv(expected0, price, Q96);
         uint256 incentive1 = assets1 / LIQUIDATION_INCENTIVE;
         assets1 += incentive1;
+
+        // Warning
+        liquidator.liquidate(account, abi.encode(address(this)), 0);
+        // Check that warning went through
+        (address owner, uint88 unleashLiquidationTime, ) = account.slot0();
+        assertEq(unleashLiquidationTime, block.timestamp + 2 minutes);
+        // Check that we can't liquidate yet
+        vm.expectRevert();
+        liquidator.liquidate(account, abi.encode(address(this)), 1);
+        // Pretend that enough time has passed
+        uint256 newSlot0 = uint256(uint160(owner)) + (uint256(block.timestamp - 1) << 160);
+        vm.store(address(account), bytes32(uint256(0)), bytes32(newSlot0));
 
         // MARK: actual command
         // Liquidator starts off with no funds
@@ -262,13 +276,21 @@ contract LiquidatorTest is Test, IManager {
 
         assertEq(asset1.balanceOf(address(account)), 0);
 
-        vm.expectRevert(bytes("Aloe: already healthy"));
+        vm.expectRevert(bytes("Aloe: healthy"));
         liquidator.liquidate(account, abi.encode(address(this)), 1);
 
         setInterest(lender1, 10010);
         borrow1 = borrow1 * 10010 / 10000;
 
         assertEq(lender1.borrowBalance(address(account)), borrow1);
+
+        liquidator.liquidate(account, abi.encode(address(this)), 0);
+
+        (address owner, uint88 unleashLiquidationTime, ) = account.slot0();
+        assertEq(unleashLiquidationTime, block.timestamp + 2 minutes);
+
+        uint256 newSlot0 = uint256(uint160(owner)) + (uint256(block.timestamp - 1) << 160);
+        vm.store(address(account), bytes32(uint256(0)), bytes32(newSlot0));
 
         vm.expectRevert();
         liquidator.liquidate(account, abi.encode(address(this)), 0);
@@ -314,7 +336,7 @@ contract LiquidatorTest is Test, IManager {
 
         assertEq(asset0.balanceOf(address(account)), 0);
 
-        vm.expectRevert(bytes("Aloe: already healthy"));
+        vm.expectRevert(bytes("Aloe: healthy"));
         liquidator.liquidate(account, abi.encode(address(this)), 1);
 
         // increase price of DAI by 1 tick
@@ -338,6 +360,18 @@ contract LiquidatorTest is Test, IManager {
         uint256 price = Math.mulDiv(prices.c, prices.c, Q96);
         uint256 assets1 = Math.mulDiv(borrow0 / strain, price, Q96);
         assets1 += assets1 / LIQUIDATION_INCENTIVE;
+
+        // Warning
+        liquidator.liquidate(account, abi.encode(address(this)), 0);
+        // Check that warning went through
+        (address owner, uint88 unleashLiquidationTime, ) = account.slot0();
+        assertEq(unleashLiquidationTime, block.timestamp + 2 minutes);
+        // Check that we can't liquidate yet
+        vm.expectRevert();
+        liquidator.liquidate(account, abi.encode(address(this)), 1);
+        // Pretend that enough time has passed
+        uint256 newSlot0 = uint256(uint160(owner)) + (uint256(block.timestamp - 1) << 160);
+        vm.store(address(account), bytes32(uint256(0)), bytes32(newSlot0));
 
         // MARK: actual command
         // account.liquidate(ILiquidator(address(this)), data, strain);
