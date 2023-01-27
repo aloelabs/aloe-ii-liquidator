@@ -103,18 +103,26 @@ function scan(borrowers: Address[]): void {
 }
 
 async function isSolvent(borrower: string): Promise<boolean> {
+    const borrowerContract: Contract = new web3.eth.Contract(marginAccountJson as AbiItem[], borrower);
     try {
         console.log("Checking solvency or something");
-        const borrowerContract: Contract = new web3.eth.Contract(marginAccountJson as AbiItem[], borrower);
-        const gasEstimate: number = await borrowerContract.methods.warn().estimateGas({gasLimit: 3_000_000})
-        // const gasEstimate: number = await LIQUIDATOR_CONTRACT.methods.liquidate(borrower, "0x0", 1).estimateGas({gasLimit:3_000_000})
-        console.log(gasEstimate)
-        console.log("Borrower is insolvent!");
+        
+        // const gasEstimate: number = await borrowerContract.methods.warn().estimateGas({gasLimit: 3_000_000})
+        const gasEstimate: number = await borrowerContract.methods.liquidate("0x7BFAAC3EEBe085f91E440E9Fc62394112b533da4", "0x0", 1).estimateGas({gasLimit:3_000_000})
+        console.log("liquidate gasEstimate", gasEstimate)
+        console.log("Borrower insolvent, liquidate called.")
         return false;
     } catch (e) {
-        winston.log("info", `Borrower ${borrower} is solvent!`);
-        console.log(e, borrower);
-        return true;
+        console.log("Error when optimisitcally calling liqudiate", e, borrower)
+        try {
+            const gasEstimate: number = await borrowerContract.methods.warn().estimateGas({gasLimit:3_000_000})
+            console.log("warn gasEstimate", gasEstimate)
+            console.log("Borrower insolvent, warn called.")
+            return false
+        } catch(e) {
+            console.log("Error when calling warn", e, borrower)
+            return false;
+        }  
     }
 }
 
