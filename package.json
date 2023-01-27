@@ -7,9 +7,9 @@
     "typescript": "^4.9.4"
   },
   "scripts": {
-    "build": "npx tsc",
-    "start": "node index.js",
-    "clean": "rm index.js SlackHook.js"
+    "build": "npx tsc src/",
+    "start": "node src/index.js",
+    "clean": "rm src/index.js src/SlackHook.js"
   },
   "dependencies": {
     "axios": "^0.25.0",
