@@ -30,7 +30,7 @@ type LiquidationTxInfo = {
 // TODO: get Liquidator contract address after deploying contract
 const LIQUIDATOR_CONTRACT_ADDRESS: string = process.env.LIQUIDATOR_ADDRESS!
 
-class TxManager {
+export default class TXManager {
 
     private queue: string[];
     private currentNonce: number = 0;
@@ -45,16 +45,17 @@ class TxManager {
     }
 
     public async init(): Promise<void> {
-        const { address } = web3.eth.accounts.create();
+        const { address } = web3.eth.accounts.privateKeyToAccount(process.env.WALLET_PRIVATE_KEY!);
         this.currentNonce = await web3.eth.getTransactionCount(address);
         this.address = address;
     }
 
     public addLiquidatableAccount(address: string) {
         this.queue.push(address);
+        this.processLiquidatableCandidates();
     }
 
-    public async processLiquidatableCandidates() {
+    public processLiquidatableCandidates() {
         for (let i = 0; i < this.queue.length; i++) {
             const borrower: string = this.queue.shift()!
             // Check the map to see if we already have a transaction info for this borrower

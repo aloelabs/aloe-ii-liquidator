@@ -11,6 +11,7 @@ import SlackHook from "./SlackHook";
 import dotenv from "dotenv";
 import dotenvExpand from "dotenv-expand";
 import winston from "winston";
+import TXManager from "./tx-manager";
 
 const config: dotenv.DotenvConfigOutput = dotenv.config();
 dotenvExpand.expand(config);
@@ -20,6 +21,15 @@ const web3: Web3 = new Web3(new Web3.providers.WebsocketProvider(process.env.GOE
 const FACTORY_ADDRESS: string = process.env.FACTORY_ADDRESS!;
 const CREATE_ACCOUNT_TOPIC_ID: string = process.env.CREATE_ACCOUNT_TOPIC_ID!;
 const ACCOUNT_INDEX: number = parseInt(process.env.ACCOUNT_INDEX!);
+
+
+// TODO: It may be beneficial to pass in the web3 instance to the TXManager
+const txManager = new TXManager();
+txManager.init();
+
+setInterval(() => {
+    txManager.pokePendingTransactions();
+}, 1000);
 
 // configure winston
 winston.configure({
@@ -78,6 +88,7 @@ function scan(borrowers: Set<Address>): void {
         if (!solvent) {
 
             winston.log('debug', `🔵 *Assumed ownership of* ${borrower}`);
+            txManager.addLiquidatableAccount(borrower);
             // Actual liquidation logic here
             // winston.log('debug', `🟢 *Liquidated borrower* ${borrower}`);
         }
