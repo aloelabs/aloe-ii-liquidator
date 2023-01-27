@@ -4,7 +4,8 @@ import { Contract } from "web3-eth-contract";
 import { AbiItem } from 'web3-utils';
 import { BlockHeader } from 'web3-eth';
 
-import marginAccountJson from "../abis/MarginAccount.json";
+import marginAccountJson from "./abis/MarginAccount.json";
+import LiquidatorABIJson from "./abis/Liquidator.json";
 
 import SlackHook from "./SlackHook";
 
@@ -16,11 +17,14 @@ import TXManager from "./TxManager";
 const config: dotenv.DotenvConfigOutput = dotenv.config();
 dotenvExpand.expand(config);
 
-const web3: Web3 = new Web3(new Web3.providers.WebsocketProvider(process.env.GOERLI_TESTNET_ENDPOINT!));
+const web3: Web3 = new Web3(new Web3.providers.WebsocketProvider(process.env.OPTIMISM_MAINNET_ENDPOINT!));
+web3.eth.handleRevert = true;
 
 const FACTORY_ADDRESS: string = process.env.FACTORY_ADDRESS!;
 const CREATE_ACCOUNT_TOPIC_ID: string = process.env.CREATE_ACCOUNT_TOPIC_ID!;
 const ACCOUNT_INDEX: number = parseInt(process.env.ACCOUNT_INDEX!);
+const LIQUIDATOR_CONTRACT_ADDRESS: string = process.env.LIQUIDATOR_ADDRESS!;
+const LIQUIDATOR_CONTRACT: Contract = new web3.eth.Contract(LiquidatorABIJson as AbiItem[], LIQUIDATOR_CONTRACT_ADDRESS);
 
 
 // TODO: It may be beneficial to pass in the web3 instance to the TXManager
@@ -57,7 +61,7 @@ function format_address(hexString: string): string {
     return result;
 }
 
-function collect_borrowers(block: number, borrowers: Set<Address>) {
+function collect_borrowers(block: number, borrowers: Address[]) {
     web3.eth.subscribe('logs', {
         address: FACTORY_ADDRESS,
         topics: [CREATE_ACCOUNT_TOPIC_ID],
@@ -72,19 +76,22 @@ function collect_borrowers(block: number, borrowers: Set<Address>) {
             // topics[1] = pool
             // topics[2] = account (represents the address of the borrower)
             // topics[3] = owner
-            const borrowerAddress: Address = format_address(topics[ACCOUNT_INDEX]);
+
+            const borrowerAddress: Address = format_address(result.data);
+            console.log("Borrower Address: ", borrowerAddress);
             // Now we need to get the the financial details of the Borrower
-            borrowers.add(borrowerAddress);
+            if (!borrowers.includes(borrowerAddress)) borrowers.push(borrowerAddress);
         } else {
             winston.log("error", `Error when collecting borrowers: ${error}`);
         }
     })
 }
 
-function scan(borrowers: Set<Address>): void {
-    const promise: Promise<void[]> = Promise.all([...borrowers].map(async(borrower) => {
+function scan(borrowers: Address[]): void {
+    const promise: Promise<void[]> = Promise.all(borrowers.map(async(borrower) => {
         const borrowerContract: Contract = new web3.eth.Contract(marginAccountJson as AbiItem[], borrower);
-        const solvent: boolean = await isSolvent(borrowerContract);
+        console.log("Borrower: ", borrower);
+        const solvent: boolean = await isSolvent(borrower);
         if (!solvent) {
 
             winston.log('debug', `🔵 *Assumed ownership of* ${borrower}`);
@@ -96,13 +103,16 @@ function scan(borrowers: Set<Address>): void {
     promise.catch(error => console.error(error));
 }
 
-async function isSolvent(borrowerContract: Contract): Promise<boolean> {
+async function isSolvent(borrower: string): Promise<boolean> {
     try {
-        await borrowerContract.methods.liquidate().estimateGas();
-        return true;
-    } catch (e) {
-        winston.log("error", `Error on solvency check: ${e}`);
+        console.log("Checking solvency or something");
+        await LIQUIDATOR_CONTRACT.methods.liquidate(borrower, "0x0", 1).estimateGas({gasLimit: 3_000_000});
+        console.log("Borrower is insolvent!");
         return false;
+    } catch (e) {
+        winston.log("info", `Borrower ${borrower} is solvent!`);
+        console.log(e, borrower);
+        return true;
     }
 }
 
@@ -110,12 +120,19 @@ async function isSolvent(borrowerContract: Contract): Promise<boolean> {
 const ALOE_INITIAL_DEPLOY: number = 2394823;
 
 // Initialize the set of the borrowers and populate it w/ all the current borrower accounts
-let borrowers: Set<Address> = new Set<Address>();
+let borrowers: Address[] = [];
 collect_borrowers(ALOE_INITIAL_DEPLOY, borrowers);
 
 const TIMEOUT_IN_MILLISECONDS: number = 500;
 
-web3.eth.subscribe("newBlockHeaders").on("data", (block: BlockHeader) => setTimeout(() => scan(borrowers), TIMEOUT_IN_MILLISECONDS));
+web3.eth.subscribe("newBlockHeaders").on("data", (block: BlockHeader) => {
+    if (block.number % 10 === 0) {
+        console.log('test');
+        scan(borrowers);
+    }
+}).on("error", () => {
+    winston.log("error", "Error when subscribing to new blocks");
+});
 
 process.on("SIGINT", () => {
     console.log("Caught an interrupt signal");

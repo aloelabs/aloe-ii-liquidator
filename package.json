@@ -7,16 +7,17 @@
     "typescript": "^4.9.4"
   },
   "scripts": {
-    "build": "npx tsc src/",
-    "start": "node src/index.js",
-    "clean": "rm src/index.js src/SlackHook.js"
+    "build": "npx tsc",
+    "start": "node lib/index.js",
+    "clean": "rm -rf lib"
   },
   "dependencies": {
-    "axios": "^0.25.0",
     "@types/big.js": "^6.1.2",
+    "axios": "^0.25.0",
     "big.js": "^6.1.1",
     "dotenv": "^16.0.3",
     "dotenv-expand": "^10.0.0",
+    "ts-node": "^10.9.1",
     "web3": "^1.8.1",
     "winston": "3.8.2",
     "winston-transport": "4.5.0"

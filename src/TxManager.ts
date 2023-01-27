@@ -1,19 +1,22 @@
 import Web3 from "web3";
 
-import dotenv from "dotenv";
-import dotenvExpand from "dotenv-expand";
-import winston from "winston";
+import { config, DotenvConfigOutput } from "dotenv";
+import { expand } from "dotenv-expand";
+import { log } from "winston";
 import { TransactionConfig, TransactionReceipt } from "web3-eth"
 import { Contract } from "web3-eth-contract";
 import { AbiItem } from 'web3-utils';
-import LiquidatorABIJson from "../abis/Liquidator.json";
+import LiquidatorABIJson from "./abis/Liquidator.json";
 
-const config: dotenv.DotenvConfigOutput = dotenv.config();
-dotenvExpand.expand(config);
+const customConfig: DotenvConfigOutput = config();
+expand(customConfig);
 
 const web3: Web3 = new Web3(new Web3.providers.WebsocketProvider(process.env.GOERLI_TESTNET_ENDPOINT!));
 
-const LIQUIDATOR_CONTRACT: Contract = new web3.eth.Contract(LiquidatorABIJson as AbiItem[]);
+// TODO: get Liquidator contract address after deploying contract
+const LIQUIDATOR_CONTRACT_ADDRESS: string = process.env.LIQUIDATOR_ADDRESS!;
+
+const LIQUIDATOR_CONTRACT: Contract = new web3.eth.Contract(LiquidatorABIJson as AbiItem[], LIQUIDATOR_CONTRACT_ADDRESS);
 
 const MAX_RETRIES_ALLOWED: number = 5;
 const GAS_INCREASE_NUMBER: number = 1.10;
@@ -26,9 +29,6 @@ type LiquidationTxInfo = {
     timeSent: number;
     retries: number;
 }
-
-// TODO: get Liquidator contract address after deploying contract
-const LIQUIDATOR_CONTRACT_ADDRESS: string = process.env.LIQUIDATOR_ADDRESS!
 
 export default class TXManager {
 
@@ -81,7 +81,7 @@ export default class TXManager {
                 liquidationTxInfo["timeSent"] = new Date().getTime();
             }
             if (liquidationTxInfo["retries"] > MAX_RETRIES_ALLOWED) {
-                winston.log("debug", `Exceeded maximum amount of retries when attempting to liquidate borrower: ${borrower}`);
+                log("debug", `Exceeded maximum amount of retries when attempting to liquidate borrower: ${borrower}`);
                 continue;
             }
             const transactionConfig: TransactionConfig = {
@@ -90,17 +90,17 @@ export default class TXManager {
                 gasPrice: liquidationTxInfo["gasPrice"],
                 gas: this.gasPriceMaximum,
                 nonce: liquidationTxInfo["nonce"],
-                data: LIQUIDATOR_CONTRACT.methods.liquidate(borrower).encodeABI()
+                data: LIQUIDATOR_CONTRACT.methods.liquidate(borrower, "0x0", 1).encodeABI()
             }
 
             web3.eth.sendTransaction(transactionConfig)
                 .on("receipt", async (receipt) => {
                     if (receipt.status) {
-                        winston.log("info", `Liquidation successful for borrower: ${borrower}`);
+                        log("info", `Liquidation successful for borrower: ${borrower}`);
                     } else {
                         const reason: string = await this.getRevertReason(receipt);
                         if (reason.localeCompare("") == 0) {
-                            winston.log("error", `EVM revert reason blank when liquidating borrower: ${borrower}`)
+                            log("error", `EVM revert reason blank when liquidating borrower: ${borrower}`)
                         }
                         switch(reason) {// Used a switch b/c there might be custom logic for other revert codes
                             case "Aloe: healthy":
@@ -112,7 +112,7 @@ export default class TXManager {
                     }
                 })
                 .on("error", (error: Error) => {
-                    winston.log("error", `Received error for borrower: ${borrower} with message: ${error.message}`)
+                    log("error", `Received error for borrower: ${borrower} with message: ${error.message}`)
                     this.addLiquidatableAccount(borrower);
                 });
         }
