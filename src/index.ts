@@ -28,12 +28,12 @@ const LIQUIDATOR_CONTRACT: Contract = new web3.eth.Contract(LiquidatorABIJson as
 
 
 // TODO: It may be beneficial to pass in the web3 instance to the TXManager
-const txManager = new TXManager();
-txManager.init();
+// const txManager = new TXManager();
+// txManager.init();
 
-setInterval(() => {
-    txManager.pokePendingTransactions();
-}, 1000);
+// setInterval(() => {
+//     txManager.pokePendingTransactions();
+// }, 1000);
 
 // configure winston
 winston.configure({
@@ -93,9 +93,8 @@ function scan(borrowers: Address[]): void {
         console.log("Borrower: ", borrower);
         const solvent: boolean = await isSolvent(borrower);
         if (!solvent) {
-
             winston.log('debug', `🔵 *Assumed ownership of* ${borrower}`);
-            txManager.addLiquidatableAccount(borrower);
+            // txManager.addLiquidatableAccount(borrower);
             // Actual liquidation logic here
             // winston.log('debug', `🟢 *Liquidated borrower* ${borrower}`);
         }
@@ -106,7 +105,10 @@ function scan(borrowers: Address[]): void {
 async function isSolvent(borrower: string): Promise<boolean> {
     try {
         console.log("Checking solvency or something");
-        await LIQUIDATOR_CONTRACT.methods.liquidate(borrower, "0x0", 1).estimateGas({gasLimit: 3_000_000});
+        const borrowerContract: Contract = new web3.eth.Contract(marginAccountJson as AbiItem[], borrower);
+        const gasEstimate: number = await borrowerContract.methods.warn().estimateGas({gasLimit: 3_000_000})
+        // const gasEstimate: number = await LIQUIDATOR_CONTRACT.methods.liquidate(borrower, "0x0", 1).estimateGas({gasLimit:3_000_000})
+        console.log(gasEstimate)
         console.log("Borrower is insolvent!");
         return false;
     } catch (e) {

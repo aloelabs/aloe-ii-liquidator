@@ -3,27 +3,72 @@
     "inputs": [
       {
         "internalType": "contract IUniswapV3Pool",
-        "name": "_pool",
+        "name": "pool",
         "type": "address"
       },
       {
-        "internalType": "contract Kitty",
-        "name": "_kitty0",
+        "internalType": "contract Lender",
+        "name": "lender0",
         "type": "address"
       },
       {
-        "internalType": "contract Kitty",
-        "name": "_kitty1",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "_owner",
+        "internalType": "contract Lender",
+        "name": "lender1",
         "type": "address"
       }
     ],
     "stateMutability": "nonpayable",
     "type": "constructor"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "repay0",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "repay1",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "incentive1",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "priceX96",
+        "type": "uint256"
+      }
+    ],
+    "name": "Liquidate",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [],
+    "name": "Warn",
+    "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "ANTE",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
   },
   {
     "inputs": [],
@@ -40,10 +85,10 @@
   },
   {
     "inputs": [],
-    "name": "KITTY0",
+    "name": "LENDER0",
     "outputs": [
       {
-        "internalType": "address",
+        "internalType": "contract Lender",
         "name": "",
         "type": "address"
       }
@@ -53,49 +98,10 @@
   },
   {
     "inputs": [],
-    "name": "KITTY1",
+    "name": "LENDER1",
     "outputs": [
       {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "MAX_SIGMA",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "MIN_SIGMA",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "OWNER",
-    "outputs": [
-      {
-        "internalType": "address",
+        "internalType": "contract Lender",
         "name": "",
         "type": "address"
       }
@@ -108,7 +114,7 @@
     "name": "TOKEN0",
     "outputs": [
       {
-        "internalType": "contract IERC20",
+        "internalType": "contract ERC20",
         "name": "",
         "type": "address"
       }
@@ -121,7 +127,7 @@
     "name": "TOKEN1",
     "outputs": [
       {
-        "internalType": "contract IERC20",
+        "internalType": "contract ERC20",
         "name": "",
         "type": "address"
       }
@@ -153,6 +159,11 @@
         "internalType": "uint256",
         "name": "amount1",
         "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "recipient",
+        "type": "address"
       }
     ],
     "name": "borrow",
@@ -162,24 +173,29 @@
   },
   {
     "inputs": [],
-    "name": "getUniswapPositions",
+    "name": "getPrices",
     "outputs": [
       {
         "components": [
           {
-            "internalType": "int24",
-            "name": "lower",
-            "type": "int24"
+            "internalType": "uint160",
+            "name": "a",
+            "type": "uint160"
           },
           {
-            "internalType": "int24",
-            "name": "upper",
-            "type": "int24"
+            "internalType": "uint160",
+            "name": "b",
+            "type": "uint160"
+          },
+          {
+            "internalType": "uint160",
+            "name": "c",
+            "type": "uint160"
           }
         ],
-        "internalType": "struct Uniswap.Position[]",
-        "name": "",
-        "type": "tuple[]"
+        "internalType": "struct Prices",
+        "name": "prices",
+        "type": "tuple"
       }
     ],
     "stateMutability": "view",
@@ -187,6 +203,48 @@
   },
   {
     "inputs": [],
+    "name": "getUniswapPositions",
+    "outputs": [
+      {
+        "internalType": "int24[]",
+        "name": "",
+        "type": "int24[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "owner_",
+        "type": "address"
+      }
+    ],
+    "name": "initialize",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "contract ILiquidator",
+        "name": "callee",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes",
+        "name": "data",
+        "type": "bytes"
+      },
+      {
+        "internalType": "uint256",
+        "name": "strain",
+        "type": "uint256"
+      }
+    ],
     "name": "liquidate",
     "outputs": [],
     "stateMutability": "nonpayable",
@@ -205,39 +263,30 @@
         "type": "bytes"
       },
       {
-        "internalType": "uint256[4]",
+        "internalType": "bool[2]",
         "name": "allowances",
-        "type": "uint256[4]"
+        "type": "bool[2]"
       }
     ],
     "name": "modify",
     "outputs": [],
-    "stateMutability": "nonpayable",
+    "stateMutability": "payable",
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "packedSlot",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "positions",
     "outputs": [
       {
         "internalType": "int24",
-        "name": "tickAtLastModify",
+        "name": "",
         "type": "int24"
-      },
-      {
-        "internalType": "bool",
-        "name": "includeKittyReceipts",
-        "type": "bool"
-      },
-      {
-        "internalType": "bool",
-        "name": "isInCallback",
-        "type": "bool"
-      },
-      {
-        "internalType": "bool",
-        "name": "isLocked",
-        "type": "bool"
       }
     ],
     "stateMutability": "view",
@@ -259,6 +308,29 @@
     "name": "repay",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "slot0",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "owner",
+        "type": "address"
+      },
+      {
+        "internalType": "uint88",
+        "name": "unleashLiquidationTime",
+        "type": "uint88"
+      },
+      {
+        "internalType": "enum Borrower.State",
+        "name": "state",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -299,36 +371,12 @@
     "inputs": [
       {
         "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "name": "uniswapPositions",
-    "outputs": [
-      {
-        "internalType": "int24",
-        "name": "lower",
-        "type": "int24"
-      },
-      {
-        "internalType": "int24",
-        "name": "upper",
-        "type": "int24"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "_amount0",
+        "name": "amount0",
         "type": "uint256"
       },
       {
         "internalType": "uint256",
-        "name": "_amount1",
+        "name": "amount1",
         "type": "uint256"
       },
       {
@@ -383,6 +431,13 @@
         "type": "uint256"
       }
     ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "warn",
+    "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
   }
