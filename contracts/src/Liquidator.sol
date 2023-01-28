@@ -25,10 +25,11 @@ contract Liquidator is ILiquidator, IUniswapV3SwapCallback {
         catch {
             borrower.warn();
         }
-        payable(tx.origin).transfer(address(this).balance);
+        payable(msg.sender).transfer(address(this).balance);
     }
 
     function swap1For0(bytes calldata data, uint256 received1, uint256 expected0) external {
+        // TODO: If expected0 is 0, return early!
         Borrower borrower = Borrower(msg.sender);
 
         // (uint160 sqrtPriceLimitX96, address rewardRecipient) = abi.decode(data, (uint160, address));
@@ -49,6 +50,7 @@ contract Liquidator is ILiquidator, IUniswapV3SwapCallback {
     }
 
     function swap0For1(bytes calldata data, uint256 received0, uint256 expected1) external {
+        // TODO: If expected0 is 0, return early!
         Borrower borrower = Borrower(msg.sender);
 
         // (uint160 sqrtPriceLimitX96, address rewardRecipient) = abi.decode(data, (uint160, address));
