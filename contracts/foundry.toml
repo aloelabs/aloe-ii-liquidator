@@ -1,11 +1,11 @@
 [profile.default]
 
-src = 'contracts/src'
-test = 'contracts/test'
-libs = ['contracts/lib']
+src = 'src'
+test = 'test'
+libs = ['lib']
 
-out = 'contracts/build'
-cache_path = 'contracts/cache'
+out = 'build'
+cache_path = 'cache'
 
 optimizer = true
 optimizer_runs = 1000000
