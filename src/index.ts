@@ -25,6 +25,8 @@ const CREATE_ACCOUNT_TOPIC_ID: string = process.env.CREATE_ACCOUNT_TOPIC_ID!;
 const LIQUIDATOR_CONTRACT_ADDRESS: string = process.env.LIQUIDATOR_ADDRESS!;
 const LIQUIDATOR_CONTRACT: Contract = new web3.eth.Contract(LiquidatorABIJson as AbiItem[], LIQUIDATOR_CONTRACT_ADDRESS);
 
+const WALLET_ADDRESS = '0xBbc2cd847Bdf10468861DAb854Cd2B2E315e28c8';
+
 
 // TODO: It may be beneficial to pass in the web3 instance to the TXManager
 // const txManager = new TXManager();
@@ -101,7 +103,7 @@ function scan(borrowers: Address[]): void {
             // TODO: We probably don't actually want to log this here, at least not at "info" level (since that'll send it to Slack every time).
             //       It gets called repeatedly until the borrower is actually liquidated. We really only want to send a notifiction when it's
             //       first added to the queue, and when it either succeeds/fails/retries. Not on every scan.
-            winston.log('info', `🧜 Sending ${borrower} to transaction manager for liquidation!`);
+            winston.log('info', `🧜 Sending \`${borrower}\` to transaction manager for liquidation!`);
             // txManager.addLiquidatableAccount(borrower);
             // Actual liquidation logic here
             // winston.log('debug', `🟢 *Liquidated borrower* ${borrower}`);
@@ -111,11 +113,11 @@ function scan(borrowers: Address[]): void {
 }
 
 async function isSolvent(borrower: string): Promise<boolean> {
-    const shortName = borrower.slice(8);
+    const shortName = borrower.slice(0, 8);
     try {
         winston.log('debug', `Checking solvency of ${shortName} via gas estimation...`)
 
-        const data = web3.eth.abi.encodeParameter("address", borrower);
+        const data = web3.eth.abi.encodeParameter("address", WALLET_ADDRESS);
         const estimatedGasLimit: number = await LIQUIDATOR_CONTRACT.methods.liquidate(borrower, data, 1).estimateGas({
             gasLimit: 3_000_000,
         });
@@ -128,7 +130,7 @@ async function isSolvent(borrower: string): Promise<boolean> {
         if (msg.includes('Aloe: healthy')) {
             winston.log('debug', `--> ${shortName} is healthy`);
         } else {
-            winston.log('error', `WARNING: Received estimation error other than "Aloe: healthy" *** ${msg}`);
+            winston.log('error', `WARNING: Received estimation error other than "Aloe: healthy" *${msg}*`);
         }
         return true; 
     }
