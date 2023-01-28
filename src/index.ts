@@ -26,14 +26,19 @@ const ACCOUNT_INDEX: number = parseInt(process.env.ACCOUNT_INDEX!);
 const LIQUIDATOR_CONTRACT_ADDRESS: string = process.env.LIQUIDATOR_ADDRESS!;
 const LIQUIDATOR_CONTRACT: Contract = new web3.eth.Contract(LiquidatorABIJson as AbiItem[], LIQUIDATOR_CONTRACT_ADDRESS);
 
+export enum LiquidationType {
+    Warn,
+    Liquidate,
+    None,
+}
 
 // TODO: It may be beneficial to pass in the web3 instance to the TXManager
-// const txManager = new TXManager();
-// txManager.init();
+const txManager = new TXManager();
+txManager.init();
 
-// setInterval(() => {
-//     txManager.pokePendingTransactions();
-// }, 1000);
+setInterval(() => {
+    txManager.pokePendingTransactions();
+}, 1000);
 
 // configure winston
 winston.configure({
@@ -90,11 +95,17 @@ function collect_borrowers(block: number, borrowers: Address[]) {
 function scan(borrowers: Address[]): void {
     const promise: Promise<void[]> = Promise.all(borrowers.map(async(borrower) => {
         const borrowerContract: Contract = new web3.eth.Contract(marginAccountJson as AbiItem[], borrower);
-        console.log("Borrower: ", borrower);
-        const solvent: boolean = await isSolvent(borrower);
-        if (!solvent) {
+        // console.log("Borrower: ", borrower);
+        // const solvencyType: LiquidationType = setTimeout(() => await isSolvent(borrowerContract, borrower), Math.random());
+        // the code below sleep for a random amount of seconds and then check if the borrower is solvent
+        // the reason is that we don't want to check all the borrowers at the same time
+        // because we want to avoid rate limiting
+        const solvencyType: LiquidationType = await new Promise(resolve => setTimeout(async () => {
+            resolve(await isSolvent(borrowerContract, borrower));
+        }, Math.random() * 5250));
+        if (solvencyType !== LiquidationType.None) {
             winston.log('debug', `🔵 *Assumed ownership of* ${borrower}`);
-            // txManager.addLiquidatableAccount(borrower);
+            txManager.addLiquidatableAccount(borrower, solvencyType);
             // Actual liquidation logic here
             // winston.log('debug', `🟢 *Liquidated borrower* ${borrower}`);
         }
@@ -102,19 +113,30 @@ function scan(borrowers: Address[]): void {
     promise.catch(error => console.error(error));
 }
 
-async function isSolvent(borrower: string): Promise<boolean> {
+async function isSolvent(borrowerContract: Contract, borrower: string): Promise<LiquidationType> {
     try {
-        console.log("Checking solvency or something");
-        const borrowerContract: Contract = new web3.eth.Contract(marginAccountJson as AbiItem[], borrower);
-        const gasEstimate: number = await borrowerContract.methods.warn().estimateGas({gasLimit: 3_000_000})
+        // console.log("Checking solvency or something");
+        const gasEstimate: number = await borrowerContract.methods.liquidate("0x7BFAAC3EEBe085f91E440E9Fc62394112b533da4", "0x0", 20).estimateGas({gasLimit:3_000_000});
         // const gasEstimate: number = await LIQUIDATOR_CONTRACT.methods.liquidate(borrower, "0x0", 1).estimateGas({gasLimit:3_000_000})
         console.log(gasEstimate)
-        console.log("Borrower is insolvent!");
-        return false;
-    } catch (e) {
-        winston.log("info", `Borrower ${borrower} is solvent!`);
-        console.log(e, borrower);
-        return true;
+        console.log("Borrower is insolvent!", borrower);
+        return LiquidationType.Liquidate;
+    } catch (e: any) {
+        // winston.log("info", `Borrower ${borrower} is solvent!`);
+        // console.log(e.message, borrower);
+        try {
+            const gasEstimate: number = await borrowerContract.methods.warn().estimateGas({gasLimit:3_000_000});
+            console.log("warn gasEstimate", gasEstimate);
+            console.log("Borrower insolvent, warn called.");
+            return LiquidationType.Warn;
+        } catch(e: any) {
+            if (e.message.includes("Aloe: healthy")) {
+                console.log(e.message, borrower);
+                return LiquidationType.None;
+            }
+            console.log("a", e.message, borrower, "liquidate");
+            return LiquidationType.Liquidate;
+        }
     }
 }
 
@@ -128,8 +150,8 @@ collect_borrowers(ALOE_INITIAL_DEPLOY, borrowers);
 const TIMEOUT_IN_MILLISECONDS: number = 500;
 
 web3.eth.subscribe("newBlockHeaders").on("data", (block: BlockHeader) => {
-    if (block.number % 10 === 0) {
-        console.log('test');
+    if (block.number % 20 === 0) {
+        // console.log('test');
         scan(borrowers);
     }
 }).on("error", () => {
