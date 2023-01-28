@@ -22,7 +22,6 @@ web3.eth.handleRevert = true;
 
 const FACTORY_ADDRESS: string = process.env.FACTORY_ADDRESS!;
 const CREATE_ACCOUNT_TOPIC_ID: string = process.env.CREATE_ACCOUNT_TOPIC_ID!;
-const ACCOUNT_INDEX: number = parseInt(process.env.ACCOUNT_INDEX!);
 const LIQUIDATOR_CONTRACT_ADDRESS: string = process.env.LIQUIDATOR_ADDRESS!;
 const LIQUIDATOR_CONTRACT: Contract = new web3.eth.Contract(LiquidatorABIJson as AbiItem[], LIQUIDATOR_CONTRACT_ADDRESS);
 
@@ -39,13 +38,18 @@ const LIQUIDATOR_CONTRACT: Contract = new web3.eth.Contract(LiquidatorABIJson as
 winston.configure({
     format: winston.format.combine(winston.format.splat(), winston.format.simple()),
     transports: [
-        new winston.transports.Console({ handleExceptions: true }),
-        new winston.transports.File({
-        level: 'debug',
-        filename: 'liquidation-bot-debug.log',
-        maxsize: 100000,
+        new winston.transports.Console({
+            level: 'debug',
+            handleExceptions: true,
         }),
-        new SlackHook(process.env.SLACK_WEBHOOK!, { level: 'info' }),
+        new winston.transports.File({
+            level: 'debug',
+            filename: 'liquidation-bot-debug.log',
+            maxsize: 100000,
+        }),
+        new SlackHook(process.env.SLACK_WEBHOOK!, {
+            level: 'info',
+        }),
     ],
     exitOnError: false,
 });
@@ -68,8 +72,6 @@ function collect_borrowers(block: number, borrowers: Address[]) {
         fromBlock: block
     }, function(error: Error, result: Log) {
         if (!error) {
-            console.log(result);
-            const topics: string[] = result["topics"]
             // Note: for CreateMarginAccount, the account is at index position 2
             // For CreateBorrower, the account will be at a different index
             // topics[0] = CreateMarginAccount method identified
@@ -78,9 +80,12 @@ function collect_borrowers(block: number, borrowers: Address[]) {
             // topics[3] = owner
 
             const borrowerAddress: Address = format_address(result.data);
-            console.log("Borrower Address: ", borrowerAddress);
-            // Now we need to get the the financial details of the Borrower
-            if (!borrowers.includes(borrowerAddress)) borrowers.push(borrowerAddress);
+            if (!borrowers.includes(borrowerAddress)) {
+                winston.log('info', `Detected new borrower! Adding \`${borrowerAddress}\` to global list (${borrowers.length} total).`);
+                borrowers.push(borrowerAddress);
+            } else {
+                winston.log('debug', `Received duplicate creation event for borrower ${borrowerAddress}`);
+            }
         } else {
             winston.log("error", `Error when collecting borrowers: ${error}`);
         }
@@ -89,11 +94,14 @@ function collect_borrowers(block: number, borrowers: Address[]) {
 
 function scan(borrowers: Address[]): void {
     const promise: Promise<void[]> = Promise.all(borrowers.map(async(borrower) => {
-        const borrowerContract: Contract = new web3.eth.Contract(marginAccountJson as AbiItem[], borrower);
-        console.log("Borrower: ", borrower);
+        // winston.log('info', `Borrower: ${borrower}`);
+
         const solvent: boolean = await isSolvent(borrower);
         if (!solvent) {
-            winston.log('debug', `🔵 *Assumed ownership of* ${borrower}`);
+            // TODO: We probably don't actually want to log this here, at least not at "info" level (since that'll send it to Slack every time).
+            //       It gets called repeatedly until the borrower is actually liquidated. We really only want to send a notifiction when it's
+            //       first added to the queue, and when it either succeeds/fails/retries. Not on every scan.
+            winston.log('info', `🧜 Sending ${borrower} to transaction manager for liquidation!`);
             // txManager.addLiquidatableAccount(borrower);
             // Actual liquidation logic here
             // winston.log('debug', `🟢 *Liquidated borrower* ${borrower}`);
@@ -103,31 +111,31 @@ function scan(borrowers: Address[]): void {
 }
 
 async function isSolvent(borrower: string): Promise<boolean> {
-    const borrowerContract: Contract = new web3.eth.Contract(marginAccountJson as AbiItem[], borrower);
+    const shortName = borrower.slice(8);
     try {
-        console.log("Checking solvency or something");
-        
-        // const gasEstimate: number = await borrowerContract.methods.warn().estimateGas({gasLimit: 3_000_000})
-        const gasEstimate: number = await borrowerContract.methods.liquidate("0x7BFAAC3EEBe085f91E440E9Fc62394112b533da4", "0x0", 1).estimateGas({gasLimit:3_000_000})
-        console.log("liquidate gasEstimate", gasEstimate)
-        console.log("Borrower insolvent, liquidate called.")
+        winston.log('debug', `Checking solvency of ${shortName} via gas estimation...`)
+
+        const data = web3.eth.abi.encodeParameter("address", borrower);
+        const estimatedGasLimit: number = await LIQUIDATOR_CONTRACT.methods.liquidate(borrower, data, 1).estimateGas({
+            gasLimit: 3_000_000,
+        });
+
+        winston.log('debug', `--> Received estimate (${estimatedGasLimit} gas), indicating that ${shortName} can be liquidated`);
         return false;
     } catch (e) {
-        console.log("Error when optimisitcally calling liqudiate", e, borrower)
-        try {
-            const gasEstimate: number = await borrowerContract.methods.warn().estimateGas({gasLimit:3_000_000})
-            console.log("warn gasEstimate", gasEstimate)
-            console.log("Borrower insolvent, warn called.")
-            return false
-        } catch(e) {
-            console.log("Error when calling warn", e, borrower)
-            return false;
-        }  
+        const msg = (e as Error).message;
+
+        if (msg.includes('Aloe: healthy')) {
+            winston.log('debug', `--> ${shortName} is healthy`);
+        } else {
+            winston.log('error', `WARNING: Received estimation error other than "Aloe: healthy" *** ${msg}`);
+        }
+        return true; 
     }
 }
 
 // First step, get a list of all of the liquidation candidates
-const ALOE_INITIAL_DEPLOY: number = 2394823;
+const ALOE_INITIAL_DEPLOY: number = 0;
 
 // Initialize the set of the borrowers and populate it w/ all the current borrower accounts
 let borrowers: Address[] = [];
@@ -136,12 +144,19 @@ collect_borrowers(ALOE_INITIAL_DEPLOY, borrowers);
 const TIMEOUT_IN_MILLISECONDS: number = 500;
 
 web3.eth.subscribe("newBlockHeaders").on("data", (block: BlockHeader) => {
-    if (block.number % 10 === 0) {
-        console.log('test');
+    if (block.number % Number(process.env.SCAN_EVERY_N_BLOCKS) === 0) {
+        winston.log('debug', `Received block ${block.number} :: ${block.timestamp}`);
+        winston.log('debug', `Scanning borrowers...`);
         scan(borrowers);
     }
+
+    if (block.number % Number(process.env.REPORT_EVERY_N_BLOCKS) === 0) {
+        winston.log('info', `Tracking ${
+            borrowers.length
+        } borrowers. Current block is ${Date.now() / 1000 - Number(block.timestamp)} seconds old`);
+    }
 }).on("error", () => {
-    winston.log("error", "Error when subscribing to new blocks");
+    winston.log('error', 'WARNING: Block header subscription failed');
 });
 
 process.on("SIGINT", () => {
@@ -152,6 +167,6 @@ process.on("SIGINT", () => {
             console.error(error);
             process.exit(1);
         }
+        process.exit(0);
     });
-    process.exit(0);
-})
+});

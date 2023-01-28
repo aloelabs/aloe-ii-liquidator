@@ -12,7 +12,7 @@ export default class SlackHook extends Transport {
 
   public log(info: any, callback: () => void): void {
     const payload = { mrkdwn: true, text: info.message };
-    // axios.post(this.webhookURL, payload).then(() => callback());
+    axios.post(this.webhookURL, payload).then(() => callback());
   }
 }
 
