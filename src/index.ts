@@ -2,9 +2,7 @@ import Web3 from "web3";
 import { Log } from "web3-core";
 import { Contract } from "web3-eth-contract";
 import { AbiItem } from 'web3-utils';
-import { BlockHeader } from 'web3-eth';
 
-import marginAccountJson from "./abis/MarginAccount.json";
 import LiquidatorABIJson from "./abis/Liquidator.json";
 
 import SlackHook from "./SlackHook";
@@ -17,7 +15,20 @@ import TXManager from "./TxManager";
 const config: dotenv.DotenvConfigOutput = dotenv.config();
 dotenvExpand.expand(config);
 
-const web3: Web3 = new Web3(new Web3.providers.WebsocketProvider(process.env.OPTIMISM_MAINNET_ENDPOINT!));
+let provider = new Web3.providers.WebsocketProvider(process.env.OPTIMISM_MAINNET_ENDPOINT!, {
+    clientConfig: {
+        keepalive: true,
+        keepaliveInterval: 60000, // ms
+    },
+    reconnect: {
+        auto: true,
+        delay: 5000,
+        maxAttempts: 5,
+        onTimeout: false,
+    },
+});
+
+let web3: Web3 = new Web3(provider);
 web3.eth.handleRevert = true;
 
 const FACTORY_ADDRESS: string = process.env.FACTORY_ADDRESS!;
@@ -25,16 +36,12 @@ const CREATE_ACCOUNT_TOPIC_ID: string = process.env.CREATE_ACCOUNT_TOPIC_ID!;
 const LIQUIDATOR_CONTRACT_ADDRESS: string = process.env.LIQUIDATOR_ADDRESS!;
 const LIQUIDATOR_CONTRACT: Contract = new web3.eth.Contract(LiquidatorABIJson as AbiItem[], LIQUIDATOR_CONTRACT_ADDRESS);
 
-const WALLET_ADDRESS = '0xBbc2cd847Bdf10468861DAb854Cd2B2E315e28c8';
+const WALLET_ADDRESS = process.env.WALLET_ADDRESS!;
 
 
 // TODO: It may be beneficial to pass in the web3 instance to the TXManager
-// const txManager = new TXManager();
-// txManager.init();
-
-// setInterval(() => {
-//     txManager.pokePendingTransactions();
-// }, 1000);
+const txManager = new TXManager();
+txManager.init();
 
 // configure winston
 winston.configure({
@@ -95,16 +102,17 @@ function collect_borrowers(block: number, borrowers: Address[]) {
 }
 
 function scan(borrowers: Address[]): void {
+    // TODO: spread these out over time, so we don't get rate limited
     const promise: Promise<void[]> = Promise.all(borrowers.map(async(borrower) => {
-        // winston.log('info', `Borrower: ${borrower}`);
-
         const solvent: boolean = await isSolvent(borrower);
+        console.log("Is solvent?", solvent, borrower);
         if (!solvent) {
             // TODO: We probably don't actually want to log this here, at least not at "info" level (since that'll send it to Slack every time).
             //       It gets called repeatedly until the borrower is actually liquidated. We really only want to send a notifiction when it's
             //       first added to the queue, and when it either succeeds/fails/retries. Not on every scan.
             winston.log('info', `🧜 Sending \`${borrower}\` to transaction manager for liquidation!`);
-            // txManager.addLiquidatableAccount(borrower);
+            console.log("Adding borrower to liquidation queue...", borrower);
+            txManager.addLiquidatableAccount(borrower);
             // Actual liquidation logic here
             // winston.log('debug', `🟢 *Liquidated borrower* ${borrower}`);
         }
@@ -118,6 +126,7 @@ async function isSolvent(borrower: string): Promise<boolean> {
         winston.log('debug', `Checking solvency of ${shortName} via gas estimation...`)
 
         const data = web3.eth.abi.encodeParameter("address", WALLET_ADDRESS);
+        console.log("Checking solvency of", borrower, "via gas estimation...", data);
         const estimatedGasLimit: number = await LIQUIDATOR_CONTRACT.methods.liquidate(borrower, data, 1).estimateGas({
             gasLimit: 3_000_000,
         });
@@ -130,7 +139,9 @@ async function isSolvent(borrower: string): Promise<boolean> {
         if (msg.includes('Aloe: healthy')) {
             winston.log('debug', `--> ${shortName} is healthy`);
         } else {
-            winston.log('error', `WARNING: Received estimation error other than "Aloe: healthy" *${msg}*`);
+            console.log("WARNING: Received estimation error other than 'Aloe: healthy'", msg);
+            console.log("This most likely means that we just warned them and we are waiting to actually liquidate them.")
+            // winston.log('error', `WARNING: Received estimation error other than "Aloe: healthy" *${msg}*`);
         }
         return true; 
     }
@@ -145,24 +156,17 @@ collect_borrowers(ALOE_INITIAL_DEPLOY, borrowers);
 
 const TIMEOUT_IN_MILLISECONDS: number = 500;
 
-web3.eth.subscribe("newBlockHeaders").on("data", (block: BlockHeader) => {
-    if (block.number % Number(process.env.SCAN_EVERY_N_BLOCKS) === 0) {
-        winston.log('debug', `Received block ${block.number} :: ${block.timestamp}`);
-        winston.log('debug', `Scanning borrowers...`);
-        scan(borrowers);
-    }
+const pollingInterval = setInterval(() => {
+    console.log("Scanning borrowers...");
+    scan(borrowers);
+}, 20_000);
 
-    if (block.number % Number(process.env.REPORT_EVERY_N_BLOCKS) === 0) {
-        winston.log('info', `Tracking ${
-            borrowers.length
-        } borrowers. Current block is ${Date.now() / 1000 - Number(block.timestamp)} seconds old`);
-    }
-}).on("error", () => {
-    winston.log('error', 'WARNING: Block header subscription failed');
-});
+winston.log("info", "🔋 Powering up liquidation bot...");
 
 process.on("SIGINT", () => {
     console.log("Caught an interrupt signal");
+    winston.log("info", "🪫 Powering down liquidation bot...");
+    clearInterval(pollingInterval);
     // Not sure unsubscribe works
     web3.eth.clearSubscriptions((error: Error, result: boolean) => {
         if (error) {

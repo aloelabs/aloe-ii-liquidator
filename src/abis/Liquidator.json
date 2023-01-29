@@ -1,98 +1,51 @@
 [
-    {
-      "inputs": [
-        {
-          "internalType": "contract Borrower",
-          "name": "borrower",
-          "type": "address"
-        },
-        {
-          "internalType": "bytes",
-          "name": "data",
-          "type": "bytes"
-        },
-        {
-          "internalType": "uint256",
-          "name": "strain",
-          "type": "uint256"
-        }
-      ],
-      "name": "liquidate",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "bytes",
-          "name": "data",
-          "type": "bytes"
-        },
-        {
-          "internalType": "uint256",
-          "name": "received0",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "expected1",
-          "type": "uint256"
-        }
-      ],
-      "name": "swap0For1",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "bytes",
-          "name": "data",
-          "type": "bytes"
-        },
-        {
-          "internalType": "uint256",
-          "name": "received1",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "expected0",
-          "type": "uint256"
-        }
-      ],
-      "name": "swap1For0",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "int256",
-          "name": "amount0Delta",
-          "type": "int256"
-        },
-        {
-          "internalType": "int256",
-          "name": "amount1Delta",
-          "type": "int256"
-        },
-        {
-          "internalType": "bytes",
-          "name": "",
-          "type": "bytes"
-        }
-      ],
-      "name": "uniswapV3SwapCallback",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "stateMutability": "payable",
-      "type": "receive"
-    }
+  {
+    "inputs": [
+      {
+        "internalType": "contract Borrower",
+        "name": "borrower",
+        "type": "address"
+      },
+      { "internalType": "bytes", "name": "data", "type": "bytes" },
+      { "internalType": "uint256", "name": "strain", "type": "uint256" }
+    ],
+    "name": "liquidate",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "bytes", "name": "data", "type": "bytes" },
+      { "internalType": "uint256", "name": "received0", "type": "uint256" },
+      { "internalType": "uint256", "name": "expected1", "type": "uint256" }
+    ],
+    "name": "swap0For1",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "bytes", "name": "data", "type": "bytes" },
+      { "internalType": "uint256", "name": "received1", "type": "uint256" },
+      { "internalType": "uint256", "name": "expected0", "type": "uint256" }
+    ],
+    "name": "swap1For0",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "int256", "name": "amount0Delta", "type": "int256" },
+      { "internalType": "int256", "name": "amount1Delta", "type": "int256" },
+      { "internalType": "bytes", "name": "", "type": "bytes" }
+    ],
+    "name": "uniswapV3SwapCallback",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  { "stateMutability": "payable", "type": "receive" }
 ]
