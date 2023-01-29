@@ -25,7 +25,7 @@ type LiquidationTxInfo = {
     borrower: string;
     gasPrice: string;
     timeSent: number;
-    retriesRemaining: number;
+    retries: number;
 }
 
 export default class TXManager {
@@ -65,6 +65,7 @@ export default class TXManager {
                 continue;
             // Check the map to see if we already have a transaction info for this borrower
             let liquidationTxInfo: LiquidationTxInfo | undefined = this.pendingTransactions.get(borrower);
+            console.log("liquidationTxInfo: ", liquidationTxInfo);
             if (liquidationTxInfo === undefined) {
                 console.log("liquidationTxInfo === undefined", liquidationTxInfo);
                 const currentGasPrice: string = await web3.eth.getGasPrice();
@@ -72,18 +73,21 @@ export default class TXManager {
                     borrower: borrower,
                     gasPrice: Math.min(parseInt(currentGasPrice), parseInt(this.gasPriceMaximum)).toString(),
                     timeSent: new Date().getTime(),
-                    retriesRemaining: MAX_RETRIES_ALLOWED,
+                    retries: 0,
                 }
+                this.pendingTransactions.set(borrower, liquidationTxInfo);
             } else {
+                console.log(liquidationTxInfo.gasPrice, liquidationTxInfo);
                 if (parseInt(liquidationTxInfo.gasPrice) * GAS_INCREASE_NUMBER <= parseInt(this.gasPriceMaximum)) {
-                    const newGasPrice: number = parseInt(liquidationTxInfo.gasPrice) * GAS_INCREASE_NUMBER
+                    const newGasPrice: number = Math.ceil(parseInt(liquidationTxInfo.gasPrice) * GAS_INCREASE_NUMBER);
+                    console.log("newGasPrice: ", newGasPrice);
                     liquidationTxInfo.gasPrice = newGasPrice.toString();
                 }
 
-                liquidationTxInfo["retriesRemaining"]--;
+                liquidationTxInfo["retries"]++;
                 liquidationTxInfo["timeSent"] = new Date().getTime();
             }
-            if (liquidationTxInfo["retriesRemaining"] <= 0) {
+            if (liquidationTxInfo["retries"] > MAX_RETRIES_ALLOWED) {
                 log("debug", `Exceeded maximum amount of retries when attempting to liquidate borrower: ${borrower}`);
                 continue;
             }
@@ -98,7 +102,7 @@ export default class TXManager {
                 data: LIQUIDATOR_CONTRACT.methods.liquidate(borrower, encodedAddress, 1).encodeABI(),
             }
 
-            console.log("transactionConfig: ", transactionConfig)
+            console.log("transactionConfig: ", transactionConfig);
             
             // An extra check to make sure we don't send the same transaction twice
             if (this.isLiquidationInProgress(borrower))
@@ -119,6 +123,7 @@ export default class TXManager {
                         }
                         switch(reason) {// Used a switch b/c there might be custom logic for other revert codes
                             case "Aloe: healthy":
+                                console.log("Aloe: healthy, removing from queue");
                                 this.pendingTransactions.delete(borrower);
                                 break;
                             default:
@@ -130,6 +135,7 @@ export default class TXManager {
                     // log("error", `Received error for borrower: ${borrower} with message: ${error.message}`)
                     console.log(error);
                     this.borrowersInProgress = this.borrowersInProgress.filter((value) => value != borrower);
+                    console.log(this.pendingTransactions);
                 });
         }
     }
