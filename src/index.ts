@@ -154,8 +154,6 @@ const ALOE_INITIAL_DEPLOY: number = 0;
 let borrowers: Address[] = [];
 collect_borrowers(ALOE_INITIAL_DEPLOY, borrowers);
 
-const TIMEOUT_IN_MILLISECONDS: number = 500;
-
 const pollingInterval = setInterval(() => {
     console.log("Scanning borrowers...");
     scan(borrowers);

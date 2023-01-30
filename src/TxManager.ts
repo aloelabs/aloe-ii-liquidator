@@ -19,7 +19,6 @@ const LIQUIDATOR_CONTRACT: Contract = new web3.eth.Contract(LiquidatorABIJson as
 
 const MAX_RETRIES_ALLOWED: number = 5;
 const GAS_INCREASE_NUMBER: number = 1.10;
-const MAX_PENDING_TIME_IN_SECONDS: number = 30;
 
 type LiquidationTxInfo = {
     borrower: string;
@@ -151,18 +150,6 @@ export default class TXManager {
           reason = web3.utils.toAscii(result.substring(138));
         }
         return reason;
-    }
-
-    public pokePendingTransactions() {
-        // For transactions that have been pending longer than 30 seconds, add them to the queue
-        this.pendingTransactions.forEach((liquidationInfo: LiquidationTxInfo, borrower: string) => {
-            const currentTime: number = new Date().getTime();
-            // Check if 30 seconds has passed
-            const elapsedTimeInSeconds: number = (currentTime - liquidationInfo["timeSent"]) / 1000;
-            if (elapsedTimeInSeconds > MAX_PENDING_TIME_IN_SECONDS) {
-                this.queue.push(borrower);
-            }
-        })
     }
     
 }
