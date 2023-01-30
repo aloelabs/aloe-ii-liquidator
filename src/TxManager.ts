@@ -11,7 +11,8 @@ import LiquidatorABIJson from "./abis/Liquidator.json";
 const customConfig: DotenvConfigOutput = config();
 expand(customConfig);
 
-const web3: Web3 = new Web3(new Web3.providers.WebsocketProvider(process.env.GOERLI_TESTNET_ENDPOINT!));
+const ETHERSCAN_LINK = "https://optimistic.etherscan.io/tx/";
+const web3: Web3 = new Web3(new Web3.providers.WebsocketProvider(process.env.OPTIMISM_MAINNET_ENDPOINT!));
 
 const LIQUIDATOR_CONTRACT_ADDRESS: string = process.env.LIQUIDATOR_ADDRESS!;
 const LIQUIDATOR_CONTRACT: Contract = new web3.eth.Contract(LiquidatorABIJson as AbiItem[], LIQUIDATOR_CONTRACT_ADDRESS);
@@ -22,7 +23,6 @@ const MAX_PENDING_TIME_IN_SECONDS: number = 30;
 
 type LiquidationTxInfo = {
     borrower: string;
-    nonce: number;
     gasPrice: string;
     timeSent: number;
     retries: number;
@@ -31,20 +31,21 @@ type LiquidationTxInfo = {
 export default class TXManager {
 
     private queue: string[];
-    private currentNonce: number = 0;
     private address: string = "";
 
     private gasPriceMaximum: string = "2000000";
     private pendingTransactions: Map<string, LiquidationTxInfo>;
+    private borrowersInProgress: string[];
 
     constructor() {
         this.queue = [];
         this.pendingTransactions = new Map<string, LiquidationTxInfo>();
+        this.borrowersInProgress = [];
     }
 
     public async init(): Promise<void> {
-        const { address } = web3.eth.accounts.privateKeyToAccount(process.env.WALLET_PRIVATE_KEY!);
-        this.currentNonce = await web3.eth.getTransactionCount(address);
+        const account = web3.eth.accounts.privateKeyToAccount(process.env.WALLET_PRIVATE_KEY!);
+        const address: string = account.address;
         this.address = address;
     }
 
@@ -53,25 +54,33 @@ export default class TXManager {
         this.processLiquidatableCandidates();
     }
 
+    private isLiquidationInProgress(borrower: string): boolean {
+        return this.borrowersInProgress.includes(borrower);
+    }
+
     public async processLiquidatableCandidates() {
         for (let i = 0; i < this.queue.length; i++) {
-            const borrower: string = this.queue.shift()!
+            const borrower: string = this.queue.shift()!;
+            if (this.isLiquidationInProgress(borrower)) 
+                continue;
             // Check the map to see if we already have a transaction info for this borrower
-            let liquidationTxInfo: LiquidationTxInfo | undefined = this.pendingTransactions.get(borrower)
-            if (liquidationTxInfo == undefined) {
-                // Only want to increase currentNonce if we're about to do a new liquidation
-                this.currentNonce++;
+            let liquidationTxInfo: LiquidationTxInfo | undefined = this.pendingTransactions.get(borrower);
+            console.log("liquidationTxInfo: ", liquidationTxInfo);
+            if (liquidationTxInfo === undefined) {
+                console.log("liquidationTxInfo === undefined", liquidationTxInfo);
                 const currentGasPrice: string = await web3.eth.getGasPrice();
                 liquidationTxInfo = {
                     borrower: borrower,
-                    nonce: this.currentNonce,
                     gasPrice: Math.min(parseInt(currentGasPrice), parseInt(this.gasPriceMaximum)).toString(),
                     timeSent: new Date().getTime(),
-                    retries: 0
+                    retries: 0,
                 }
+                this.pendingTransactions.set(borrower, liquidationTxInfo);
             } else {
+                console.log(liquidationTxInfo.gasPrice, liquidationTxInfo);
                 if (parseInt(liquidationTxInfo.gasPrice) * GAS_INCREASE_NUMBER <= parseInt(this.gasPriceMaximum)) {
-                    const newGasPrice: number = parseInt(liquidationTxInfo.gasPrice) * GAS_INCREASE_NUMBER
+                    const newGasPrice: number = Math.ceil(parseInt(liquidationTxInfo.gasPrice) * GAS_INCREASE_NUMBER);
+                    console.log("newGasPrice: ", newGasPrice);
                     liquidationTxInfo.gasPrice = newGasPrice.toString();
                 }
 
@@ -82,26 +91,39 @@ export default class TXManager {
                 log("debug", `Exceeded maximum amount of retries when attempting to liquidate borrower: ${borrower}`);
                 continue;
             }
+            const encodedAddress = web3.eth.abi.encodeParameter("address", this.address);
+            const currentNonce = await web3.eth.getTransactionCount(this.address, "pending");
             const transactionConfig: TransactionConfig = {
                 from: this.address,
                 to: LIQUIDATOR_CONTRACT_ADDRESS,
                 gasPrice: liquidationTxInfo["gasPrice"],
                 gas: this.gasPriceMaximum,
-                nonce: liquidationTxInfo["nonce"],
-                data: LIQUIDATOR_CONTRACT.methods.liquidate(borrower, "0x0", 1).encodeABI()
+                nonce: currentNonce,
+                data: LIQUIDATOR_CONTRACT.methods.liquidate(borrower, encodedAddress, 1).encodeABI(),
             }
 
-            web3.eth.sendTransaction(transactionConfig)
+            console.log("transactionConfig: ", transactionConfig);
+            
+            // An extra check to make sure we don't send the same transaction twice
+            if (this.isLiquidationInProgress(borrower))
+                continue;
+
+            this.borrowersInProgress.push(borrower);
+            const signedTransaction = await web3.eth.accounts.signTransaction(transactionConfig, process.env.WALLET_PRIVATE_KEY!);
+            web3.eth.sendSignedTransaction(signedTransaction.rawTransaction!)
                 .on("receipt", async (receipt) => {
                     if (receipt.status) {
-                        log("info", `Liquidation successful for borrower: ${borrower}`);
+                        log("info", `💦 Borrower \`${borrower}\` has been liquidated! ${ETHERSCAN_LINK}${receipt.transactionHash}`);
+                        this.pendingTransactions.delete(borrower);
+                        this.borrowersInProgress = this.borrowersInProgress.filter((value) => value != borrower);
                     } else {
                         const reason: string = await this.getRevertReason(receipt);
                         if (reason.localeCompare("") == 0) {
-                            log("error", `EVM revert reason blank when liquidating borrower: ${borrower}`)
+                            log("error", `EVM revert reason blank when liquidating borrower: ${borrower}`);
                         }
                         switch(reason) {// Used a switch b/c there might be custom logic for other revert codes
                             case "Aloe: healthy":
+                                console.log("Aloe: healthy, removing from queue");
                                 this.pendingTransactions.delete(borrower);
                                 break;
                             default:
@@ -110,8 +132,10 @@ export default class TXManager {
                     }
                 })
                 .on("error", (error: Error) => {
-                    log("error", `Received error for borrower: ${borrower} with message: ${error.message}`)
-                    this.addLiquidatableAccount(borrower);
+                    // log("error", `Received error for borrower: ${borrower} with message: ${error.message}`)
+                    console.log(error);
+                    this.borrowersInProgress = this.borrowersInProgress.filter((value) => value != borrower);
+                    console.log(this.pendingTransactions);
                 });
         }
     }
@@ -120,13 +144,13 @@ export default class TXManager {
     public async getRevertReason(txReceipt: TransactionReceipt): Promise<string> {
         var result: string = await web3.eth.call(txReceipt, txReceipt.blockNumber);
 
-        result = result.startsWith('0x') ? result : `0x${result}`
+        result = result.startsWith('0x') ? result : `0x${result}`;
 
         let reason: string = "";
         if (result && result.substring(138)) {
-          reason = web3.utils.toAscii(result.substring(138))
+          reason = web3.utils.toAscii(result.substring(138));
         }
-        return reason
+        return reason;
     }
 
     public pokePendingTransactions() {
@@ -134,7 +158,7 @@ export default class TXManager {
         this.pendingTransactions.forEach((liquidationInfo: LiquidationTxInfo, borrower: string) => {
             const currentTime: number = new Date().getTime();
             // Check if 30 seconds has passed
-            const elapsedTimeInSeconds: number = (currentTime - liquidationInfo["timeSent"]) / 1000
+            const elapsedTimeInSeconds: number = (currentTime - liquidationInfo["timeSent"]) / 1000;
             if (elapsedTimeInSeconds > MAX_PENDING_TIME_IN_SECONDS) {
                 this.queue.push(borrower);
             }
