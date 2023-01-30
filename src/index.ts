@@ -81,13 +81,6 @@ function collect_borrowers(block: number, borrowers: Address[]) {
         fromBlock: block
     }, function(error: Error, result: Log) {
         if (!error) {
-            // Note: for CreateMarginAccount, the account is at index position 2
-            // For CreateBorrower, the account will be at a different index
-            // topics[0] = CreateMarginAccount method identified
-            // topics[1] = pool
-            // topics[2] = account (represents the address of the borrower)
-            // topics[3] = owner
-
             const borrowerAddress: Address = format_address(result.data);
             if (!borrowers.includes(borrowerAddress)) {
                 winston.log('info', `Detected new borrower! Adding \`${borrowerAddress}\` to global list (${borrowers.length} total).`);
