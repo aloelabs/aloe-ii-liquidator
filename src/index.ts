@@ -106,8 +106,6 @@ function scan(borrowers: Address[]): void {
             winston.log('info', `🧜 Sending \`${borrower}\` to transaction manager for liquidation!`);
             console.log("Adding borrower to liquidation queue...", borrower);
             txManager.addLiquidatableAccount(borrower);
-            // Actual liquidation logic here
-            // winston.log('debug', `🟢 *Liquidated borrower* ${borrower}`);
         }
     }))
     promise.catch(error => console.error(error));
@@ -134,13 +132,12 @@ async function isSolvent(borrower: string): Promise<boolean> {
         } else {
             console.log("WARNING: Received estimation error other than 'Aloe: healthy'", msg);
             console.log("This most likely means that we just warned them and we are waiting to actually liquidate them.")
-            // winston.log('error', `WARNING: Received estimation error other than "Aloe: healthy" *${msg}*`);
         }
         return true; 
     }
 }
 
-// First step, get a list of all of the liquidation candidates
+// First, get a list of all of the liquidation candidates
 const ALOE_INITIAL_DEPLOY: number = 0;
 
 // Initialize the set of the borrowers and populate it w/ all the current borrower accounts
