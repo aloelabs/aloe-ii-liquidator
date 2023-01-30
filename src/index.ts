@@ -81,13 +81,6 @@ function collect_borrowers(block: number, borrowers: Address[]) {
         fromBlock: block
     }, function(error: Error, result: Log) {
         if (!error) {
-            // Note: for CreateMarginAccount, the account is at index position 2
-            // For CreateBorrower, the account will be at a different index
-            // topics[0] = CreateMarginAccount method identified
-            // topics[1] = pool
-            // topics[2] = account (represents the address of the borrower)
-            // topics[3] = owner
-
             const borrowerAddress: Address = format_address(result.data);
             if (!borrowers.includes(borrowerAddress)) {
                 winston.log('info', `Detected new borrower! Adding \`${borrowerAddress}\` to global list (${borrowers.length} total).`);
@@ -113,8 +106,6 @@ function scan(borrowers: Address[]): void {
             winston.log('info', `🧜 Sending \`${borrower}\` to transaction manager for liquidation!`);
             console.log("Adding borrower to liquidation queue...", borrower);
             txManager.addLiquidatableAccount(borrower);
-            // Actual liquidation logic here
-            // winston.log('debug', `🟢 *Liquidated borrower* ${borrower}`);
         }
     }))
     promise.catch(error => console.error(error));
@@ -141,20 +132,17 @@ async function isSolvent(borrower: string): Promise<boolean> {
         } else {
             console.log("WARNING: Received estimation error other than 'Aloe: healthy'", msg);
             console.log("This most likely means that we just warned them and we are waiting to actually liquidate them.")
-            // winston.log('error', `WARNING: Received estimation error other than "Aloe: healthy" *${msg}*`);
         }
         return true; 
     }
 }
 
-// First step, get a list of all of the liquidation candidates
+// First, get a list of all of the liquidation candidates
 const ALOE_INITIAL_DEPLOY: number = 0;
 
 // Initialize the set of the borrowers and populate it w/ all the current borrower accounts
 let borrowers: Address[] = [];
 collect_borrowers(ALOE_INITIAL_DEPLOY, borrowers);
-
-const TIMEOUT_IN_MILLISECONDS: number = 500;
 
 const pollingInterval = setInterval(() => {
     console.log("Scanning borrowers...");
