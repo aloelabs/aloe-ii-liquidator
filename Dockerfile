@@ -1,7 +1,9 @@
 FROM node:16
 
-WORKDIR app/
-
+WORKDIR /app
+COPY package.json ./
+RUN yarn install
 COPY . .
-
-ENTRYPOINT [ "/bin/bash" ]
+EXPOSE 8080
+RUN yarn build
+CMD [ "node", "lib/index.js" ]

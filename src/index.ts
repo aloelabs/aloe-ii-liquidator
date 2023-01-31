@@ -9,11 +9,26 @@ import SlackHook from "./SlackHook";
 
 import dotenv from "dotenv";
 import dotenvExpand from "dotenv-expand";
+import express from "express";
 import winston from "winston";
 import TXManager from "./TxManager";
 
 const config: dotenv.DotenvConfigOutput = dotenv.config();
 dotenvExpand.expand(config);
+const port = process.env.PORT || 8080;
+const app = express();
+
+app.get('/', (req, res) => {
+    res.send('Hello World!');
+});
+
+app.get('/liveness_check', (req, res) => {
+    res.send('OK');
+});
+
+app.get('/readiness_check', (req, res) => {
+    res.send('OK');
+});
 
 let provider = new Web3.providers.WebsocketProvider(process.env.OPTIMISM_MAINNET_ENDPOINT!, {
     clientConfig: {
@@ -83,7 +98,7 @@ function collect_borrowers(block: number, borrowers: Address[]) {
         if (!error) {
             const borrowerAddress: Address = format_address(result.data);
             if (!borrowers.includes(borrowerAddress)) {
-                winston.log('info', `Detected new borrower! Adding \`${borrowerAddress}\` to global list (${borrowers.length} total).`);
+                winston.log('debug', `Detected new borrower! Adding \`${borrowerAddress}\` to global list (${borrowers.length} total).`);
                 borrowers.push(borrowerAddress);
             } else {
                 winston.log('debug', `Received duplicate creation event for borrower ${borrowerAddress}`);
@@ -151,10 +166,30 @@ const pollingInterval = setInterval(() => {
 
 winston.log("info", "🔋 Powering up liquidation bot...");
 
+const server = app.listen(port, () => {
+    console.log(`Example app listening at http://localhost:${port}`);
+});
+
 process.on("SIGINT", () => {
     console.log("Caught an interrupt signal");
     winston.log("info", "🪫 Powering down liquidation bot...");
     clearInterval(pollingInterval);
+    server.close();
+    // Not sure unsubscribe works
+    web3.eth.clearSubscriptions((error: Error, result: boolean) => {
+        if (error) {
+            console.error(error);
+            process.exit(1);
+        }
+        process.exit(0);
+    });
+});
+
+process.on("SIGTERM", () => {
+    console.log("Caught a terminate signal");
+    winston.log("info", "🪫 Powering down liquidation bot...");
+    clearInterval(pollingInterval);
+    server.close();
     // Not sure unsubscribe works
     web3.eth.clearSubscriptions((error: Error, result: boolean) => {
         if (error) {
