@@ -1,5 +1,7 @@
 printenv > .env
 
+echo "WALLET_ADDRESS=$WALLET_ADDRESS"
+
 sed -i 's/%WALLET_ADDRESS%/'$WALLET_ADDRESS'/g' app.yaml
 sed -i 's/%WALLET_PRIVATE_KEY%/'$WALLET_PRIVATE_KEY'/g' app.yaml
 sed -i 's/%API_TOKEN%/'$API_TOKEN'/g' app.yaml
