@@ -1,4 +1,19 @@
 steps:
+- name: 'ubuntu'
+  dir: 'app'
+  args: ['bash', './env_script.sh']
+  env:
+    - 'WALLET_ADDRESS=${_WALLET_ADDRESS}'
+    - 'WALLET_PRIVATE_KEY=${_WALLET_PRIVATE_KEY}'
+    - 'API_TOKEN=${_API_TOKEN}'
+    - 'OPTIMISM_API_TOKEN=${_OPTIMISM_API_TOKEN}'
+    - 'PROTOCOL=${_PROTOCOL}'
+    - 'OPTIMISM_MAINNET_ENDPOINT=${_OPTIMISM_MAINNET_ENDPOINT}'
+    - 'FACTORY_ADDRESS=${_FACTORY_ADDRESS}'
+    - 'CREATE_ACCOUNT_TOPIC_ID=${_CREATE_ACCOUNT_TOPIC_ID}'
+    - 'LIQUIDATOR_ADDRESS=${_LIQUIDATOR_ADDRESS}'
+    - 'SLACK_WEBHOOK=${_SLACK_WEBHOOK}'
+steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   dir: 'app'
   args: ['app', 'deploy', '.']
