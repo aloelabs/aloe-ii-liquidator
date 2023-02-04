@@ -13,7 +13,6 @@ steps:
     - 'CREATE_ACCOUNT_TOPIC_ID=${_CREATE_ACCOUNT_TOPIC_ID}'
     - 'LIQUIDATOR_ADDRESS=${_LIQUIDATOR_ADDRESS}'
     - 'SLACK_WEBHOOK=${_SLACK_WEBHOOK}'
-steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   dir: 'app'
   args: ['app', 'deploy', '.']
