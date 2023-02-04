@@ -8,13 +8,11 @@ import LiquidatorABIJson from "./abis/Liquidator.json";
 import SlackHook from "./SlackHook";
 
 import dotenv from "dotenv";
-import dotenvExpand from "dotenv-expand";
 import express from "express";
 import winston from "winston";
 import TXManager from "./TxManager";
 
 const config: dotenv.DotenvConfigOutput = dotenv.config();
-dotenvExpand.expand(config);
 const port = process.env.PORT || 8080;
 const app = express();
 const uniqueId = (Math.random() * 1000000).toFixed(0);

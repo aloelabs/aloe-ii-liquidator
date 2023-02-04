@@ -1,7 +1,6 @@
 import Web3 from "web3";
 
 import { config, DotenvConfigOutput } from "dotenv";
-import { expand } from "dotenv-expand";
 import { log } from "winston";
 import { TransactionConfig, TransactionReceipt } from "web3-eth"
 import { Contract } from "web3-eth-contract";
@@ -9,7 +8,6 @@ import { AbiItem } from 'web3-utils';
 import LiquidatorABIJson from "./abis/Liquidator.json";
 
 const customConfig: DotenvConfigOutput = config();
-expand(customConfig);
 
 const ETHERSCAN_LINK = "https://optimistic.etherscan.io/tx/";
 const web3: Web3 = new Web3(new Web3.providers.WebsocketProvider(process.env.OPTIMISM_MAINNET_ENDPOINT!));
