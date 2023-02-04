@@ -1,16 +1,17 @@
 import Web3 from "web3";
 
-import { config, DotenvConfigOutput } from "dotenv";
+import { config } from "dotenv";
 import { log } from "winston";
 import { TransactionConfig, TransactionReceipt } from "web3-eth"
 import { Contract } from "web3-eth-contract";
 import { AbiItem } from 'web3-utils';
 import LiquidatorABIJson from "./abis/Liquidator.json";
 
-const customConfig: DotenvConfigOutput = config();
+config();
 
+const OPTIMISM_ALCHEMY_URL = `wss://opt-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY!}`;
 const ETHERSCAN_LINK = "https://optimistic.etherscan.io/tx/";
-const web3: Web3 = new Web3(new Web3.providers.WebsocketProvider(process.env.OPTIMISM_MAINNET_ENDPOINT!));
+const web3: Web3 = new Web3(new Web3.providers.WebsocketProvider(OPTIMISM_ALCHEMY_URL));
 
 const LIQUIDATOR_CONTRACT_ADDRESS: string = process.env.LIQUIDATOR_ADDRESS!;
 const LIQUIDATOR_CONTRACT: Contract = new web3.eth.Contract(LiquidatorABIJson as AbiItem[], LIQUIDATOR_CONTRACT_ADDRESS);
