@@ -19,6 +19,7 @@ const LIQUIDATOR_CONTRACT: Contract = new web3.eth.Contract(LiquidatorABIJson as
 
 const MAX_RETRIES_ALLOWED: number = 5;
 const GAS_INCREASE_NUMBER: number = 1.10;
+const MAX_ACCEPTABLE_ERRORS = 1;
 
 type LiquidationTxInfo = {
     borrower: string;
@@ -35,11 +36,13 @@ export default class TXManager {
     private gasPriceMaximum: string = "2000000";
     private pendingTransactions: Map<string, LiquidationTxInfo>;
     private borrowersInProgress: string[];
+    private errorCount: number;
 
     constructor() {
         this.queue = [];
         this.pendingTransactions = new Map<string, LiquidationTxInfo>();
         this.borrowersInProgress = [];
+        this.errorCount = 0;
     }
 
     public async init(): Promise<void> {
@@ -135,6 +138,7 @@ export default class TXManager {
                     console.log(error);
                     this.borrowersInProgress = this.borrowersInProgress.filter((value) => value != borrower);
                     console.log(this.pendingTransactions);
+                    this.errorCount++;
                 });
         }
     }
@@ -150,6 +154,10 @@ export default class TXManager {
           reason = web3.utils.toAscii(result.substring(138));
         }
         return reason;
+    }
+
+    public isHealthy(): boolean {
+        return this.errorCount < MAX_ACCEPTABLE_ERRORS;
     }
     
 }
