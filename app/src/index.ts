@@ -14,6 +14,7 @@ import TXManager from "./TxManager";
 
 dotenv.config();
 const OPTIMISM_ALCHEMY_URL = `wss://opt-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY!}`;
+const SLACK_WEBHOOK_URL = `https://hooks.slack.com/services/${process.env.SLACK_WEBHOOK!}`;
 const port = process.env.PORT || 8080;
 const app = express();
 const uniqueId = (Math.random() * 1000000).toFixed(0);
@@ -79,7 +80,7 @@ winston.configure({
             filename: 'liquidation-bot-debug.log',
             maxsize: 100000,
         }),
-        new SlackHook(process.env.SLACK_WEBHOOK!, {
+        new SlackHook(SLACK_WEBHOOK_URL, {
             level: 'info',
         }),
     ],
