@@ -10,7 +10,9 @@ steps:
     - 'FACTORY_ADDRESS=${_FACTORY_ADDRESS}'
     - 'CREATE_ACCOUNT_TOPIC_ID=${_CREATE_ACCOUNT_TOPIC_ID}'
     - 'LIQUIDATOR_ADDRESS=${_LIQUIDATOR_ADDRESS}'
-    - 'SLACK_WEBHOOK=${_SLACK_WEBHOOK}'
+    - 'SLACK_WEBHOOK0=${_SLACK_WEBHOOK0}'
+    - 'SLACK_WEBHOOK1=${_SLACK_WEBHOOK1}'
+    - 'SLACK_WEBHOOK2=${_SLACK_WEBHOOK2}'
 - name: 'gcr.io/cloud-builders/gcloud'
   dir: 'app'
   args: ['app', 'deploy', '.']
