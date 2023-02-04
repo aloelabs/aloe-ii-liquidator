@@ -17,17 +17,26 @@ const config: dotenv.DotenvConfigOutput = dotenv.config();
 dotenvExpand.expand(config);
 const port = process.env.PORT || 8080;
 const app = express();
+const uniqueId = (Math.random() * 1000000).toFixed(0);
 
 app.get('/', (req, res) => {
     res.send('Hello World!');
 });
 
 app.get('/liveness_check', (req, res) => {
-    res.send('OK');
+    if (txManager.isHealthy()) {
+        res.status(200);
+    } else {
+        res.status(500);
+    }
 });
 
 app.get('/readiness_check', (req, res) => {
-    res.send('OK');
+    if (txManager.isHealthy()) {
+        res.status(200);
+    } else {
+        res.status(500);
+    }
 });
 
 let provider = new Web3.providers.WebsocketProvider(process.env.OPTIMISM_MAINNET_ENDPOINT!, {
@@ -164,7 +173,7 @@ const pollingInterval = setInterval(() => {
     scan(borrowers);
 }, 20_000);
 
-winston.log("info", "🔋 Powering up liquidation bot...");
+winston.log("info", `🔋 Powering up liquidation bot #${uniqueId}`);
 
 const server = app.listen(port, () => {
     console.log(`Example app listening at http://localhost:${port}`);
@@ -172,7 +181,7 @@ const server = app.listen(port, () => {
 
 process.on("SIGINT", () => {
     console.log("Caught an interrupt signal");
-    winston.log("info", "🪫 Powering down liquidation bot...");
+    winston.log("info", `🪫 Powering down liquidation bot #${uniqueId}`);
     clearInterval(pollingInterval);
     server.close();
     // Not sure unsubscribe works
@@ -187,7 +196,7 @@ process.on("SIGINT", () => {
 
 process.on("SIGTERM", () => {
     console.log("Caught a terminate signal");
-    winston.log("info", "🪫 Powering down liquidation bot...");
+    winston.log("info", `🪫 Powering down liquidation bot #${uniqueId}`);
     clearInterval(pollingInterval);
     server.close();
     // Not sure unsubscribe works
