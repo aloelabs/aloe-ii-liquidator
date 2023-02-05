@@ -19,24 +19,25 @@ const port = process.env.PORT || 8080;
 const app = express();
 const uniqueId = (Math.random() * 1000000).toFixed(0);
 
-app.get('/', (req, res) => {
-    res.send('Hello World!');
-});
-
-app.get('/liveness_check', (req, res) => {
-    if (txManager.isHealthy()) {
-        res.status(200);
-    } else {
+app.get('/liveness_check', async (req, res) => {
+    if (await txManager.isHealthy()) {
         res.status(500);
+    } else {
+        res.status(200);
     }
 });
 
-app.get('/readiness_check', (req, res) => {
-    if (txManager.isHealthy()) {
-        res.status(200);
-    } else {
-        res.status(500);
+app.get('/readiness_check', async (req, res) => {
+    try {
+        const result: boolean = await web3.eth.net.isListening();
+    } catch (e) {
+        const msg: string = (e as Error).message;
+        return res.status(500).send({"error": msg}) 
     }
+    if (txManager.isHealthy()) {
+        return res.status(500).send({"error": "TXManager Unhealthy"});
+    }
+    return res.status(200).send({"status": "ok"})
 });
 
 let provider = new Web3.providers.WebsocketProvider(OPTIMISM_ALCHEMY_URL, {
@@ -62,9 +63,7 @@ const LIQUIDATOR_CONTRACT: Contract = new web3.eth.Contract(LiquidatorABIJson as
 
 const WALLET_ADDRESS = process.env.WALLET_ADDRESS!;
 
-
-// TODO: It may be beneficial to pass in the web3 instance to the TXManager
-const txManager = new TXManager();
+const txManager = new TXManager(web3);
 txManager.init();
 
 // configure winston

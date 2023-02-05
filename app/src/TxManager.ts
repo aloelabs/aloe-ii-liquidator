@@ -5,16 +5,14 @@ import { log } from "winston";
 import { TransactionConfig, TransactionReceipt } from "web3-eth"
 import { Contract } from "web3-eth-contract";
 import { AbiItem } from 'web3-utils';
+import { Account } from 'web3-core'
 import LiquidatorABIJson from "./abis/Liquidator.json";
 
 config();
 
-const OPTIMISM_ALCHEMY_URL = `wss://opt-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY!}`;
 const ETHERSCAN_LINK = "https://optimistic.etherscan.io/tx/";
-const web3: Web3 = new Web3(new Web3.providers.WebsocketProvider(OPTIMISM_ALCHEMY_URL));
 
 const LIQUIDATOR_CONTRACT_ADDRESS: string = process.env.LIQUIDATOR_ADDRESS!;
-const LIQUIDATOR_CONTRACT: Contract = new web3.eth.Contract(LiquidatorABIJson as AbiItem[], LIQUIDATOR_CONTRACT_ADDRESS);
 
 const MAX_RETRIES_ALLOWED: number = 5;
 const GAS_INCREASE_NUMBER: number = 1.10;
@@ -31,21 +29,26 @@ export default class TXManager {
 
     private queue: string[];
     private address: string = "";
+    private client: Web3;
 
     private gasPriceMaximum: string = "2000000";
     private pendingTransactions: Map<string, LiquidationTxInfo>;
     private borrowersInProgress: string[];
     private errorCount: number;
+    
+    private liquidatorContract: Contract;
 
-    constructor() {
+    constructor(web3Client: Web3) {
+        this.client = web3Client;
         this.queue = [];
         this.pendingTransactions = new Map<string, LiquidationTxInfo>();
         this.borrowersInProgress = [];
         this.errorCount = 0;
+        this.liquidatorContract = new this.client.eth.Contract(LiquidatorABIJson as AbiItem[], LIQUIDATOR_CONTRACT_ADDRESS);
     }
 
     public async init(): Promise<void> {
-        const account = web3.eth.accounts.privateKeyToAccount(process.env.WALLET_PRIVATE_KEY!);
+        const account: Account = this.client.eth.accounts.privateKeyToAccount(process.env.WALLET_PRIVATE_KEY!)
         const address: string = account.address;
         this.address = address;
     }
@@ -69,7 +72,7 @@ export default class TXManager {
             console.log("liquidationTxInfo: ", liquidationTxInfo);
             if (liquidationTxInfo === undefined) {
                 console.log("liquidationTxInfo === undefined", liquidationTxInfo);
-                const currentGasPrice: string = await web3.eth.getGasPrice();
+                const currentGasPrice: string = await this.client.eth.getGasPrice();
                 liquidationTxInfo = {
                     borrower: borrower,
                     gasPrice: Math.min(parseInt(currentGasPrice), parseInt(this.gasPriceMaximum)).toString(),
@@ -92,15 +95,15 @@ export default class TXManager {
                 log("debug", `Exceeded maximum amount of retries when attempting to liquidate borrower: ${borrower}`);
                 continue;
             }
-            const encodedAddress = web3.eth.abi.encodeParameter("address", this.address);
-            const currentNonce = await web3.eth.getTransactionCount(this.address, "pending");
+            const encodedAddress = this.client.eth.abi.encodeParameter("address", this.address);
+            const currentNonce = await this.client.eth.getTransactionCount(this.address, "pending");
             const transactionConfig: TransactionConfig = {
                 from: this.address,
                 to: LIQUIDATOR_CONTRACT_ADDRESS,
                 gasPrice: liquidationTxInfo["gasPrice"],
                 gas: this.gasPriceMaximum,
                 nonce: currentNonce,
-                data: LIQUIDATOR_CONTRACT.methods.liquidate(borrower, encodedAddress, 1).encodeABI(),
+                data: this.liquidatorContract.methods.liquidate(borrower, encodedAddress, 1).encodeABI(),
             }
 
             console.log("transactionConfig: ", transactionConfig);
@@ -110,8 +113,8 @@ export default class TXManager {
                 continue;
 
             this.borrowersInProgress.push(borrower);
-            const signedTransaction = await web3.eth.accounts.signTransaction(transactionConfig, process.env.WALLET_PRIVATE_KEY!);
-            web3.eth.sendSignedTransaction(signedTransaction.rawTransaction!)
+            const signedTransaction = await this.client.eth.accounts.signTransaction(transactionConfig, process.env.WALLET_PRIVATE_KEY!);
+            this.client.eth.sendSignedTransaction(signedTransaction.rawTransaction!)
                 .on("receipt", async (receipt) => {
                     if (receipt.status) {
                         log("info", `💦 Borrower \`${borrower}\` has been liquidated! ${ETHERSCAN_LINK}${receipt.transactionHash}`);
@@ -144,13 +147,13 @@ export default class TXManager {
 
     // https://ethereum.stackexchange.com/questions/84545/how-to-get-reason-revert-using-web3-eth-call
     public async getRevertReason(txReceipt: TransactionReceipt): Promise<string> {
-        var result: string = await web3.eth.call(txReceipt, txReceipt.blockNumber);
+        var result: string = await this.client.eth.call(txReceipt, txReceipt.blockNumber);
 
         result = result.startsWith('0x') ? result : `0x${result}`;
 
         let reason: string = "";
         if (result && result.substring(138)) {
-          reason = web3.utils.toAscii(result.substring(138));
+          reason = this.client.utils.toAscii(result.substring(138));
         }
         return reason;
     }
