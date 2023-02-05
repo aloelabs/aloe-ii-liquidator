@@ -20,7 +20,7 @@ const app = express();
 const uniqueId = (Math.random() * 1000000).toFixed(0);
 
 app.get('/liveness_check', async (req, res) => {
-    if (await txManager.isHealthy()) {
+    if (txManager.isHealthy()) {
         res.status(200);
     } else {
         res.status(500);
