@@ -32,6 +32,7 @@ app.get('/liveness_check', (req, res) => {
 app.get('/readiness_check', async (req, res) => {
     try {
         const result: boolean = await web3.eth.net.isListening();
+        console.log("Is listening?", result);
         if (!result) {
             return res.status(NOT_READY_CODE).send({"error": "unable to listen to peers"})
         }
