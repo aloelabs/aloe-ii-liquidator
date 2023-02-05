@@ -13,6 +13,7 @@ import winston from "winston";
 import TXManager from "./TxManager";
 
 dotenv.config();
+const POLLING_INTERVAL = 60_000;
 const OPTIMISM_ALCHEMY_URL = `wss://opt-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY!}`;
 const SLACK_WEBHOOK_URL = `https://hooks.slack.com/services/${process.env.SLACK_WEBHOOK0!}/${process.env.SLACK_WEBHOOK1!}/${process.env.SLACK_WEBHOOK2!}`;
 const port = process.env.PORT || 8080;
@@ -171,7 +172,7 @@ collect_borrowers(ALOE_INITIAL_DEPLOY, borrowers);
 const pollingInterval = setInterval(() => {
     console.log("Scanning borrowers...");
     scan(borrowers);
-}, 20_000);
+}, POLLING_INTERVAL);
 
 winston.log("info", `🔋 Powering up liquidation bot #${uniqueId}`);
 
