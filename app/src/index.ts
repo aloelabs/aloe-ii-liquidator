@@ -18,6 +18,8 @@ const SLACK_WEBHOOK_URL = `https://hooks.slack.com/services/${process.env.SLACK_
 const port = process.env.PORT || 8080;
 const app = express();
 const uniqueId = (Math.random() * 1000000).toFixed(0);
+const NOT_READY_CODE: number = 503;
+const STATUS_OK: number = 200;
 
 app.get('/liveness_check', (req, res) => {
     if (txManager.isHealthy()) {
@@ -31,16 +33,16 @@ app.get('/readiness_check', async (req, res) => {
     try {
         const result: boolean = await web3.eth.net.isListening();
         if (!result) {
-            return res.status(500).send({"error": "unable to listen to peers"})
+            return res.status(NOT_READY_CODE).send({"error": "unable to listen to peers"})
         }
     } catch (e) {
         const msg: string = (e as Error).message;
-        return res.status(500).send({"error": msg}) 
+        return res.status(NOT_READY_CODE).send({"error": msg}) 
     }
     if (txManager.isHealthy()) {
-        return res.status(500).send({"error": "TXManager Unhealthy"});
+        return res.status(NOT_READY_CODE).send({"error": "TXManager Unhealthy"});
     }
-    return res.status(200).send({"status": "ok"})
+    return res.status(STATUS_OK).send({"status": "ok"})
 });
 
 let provider = new Web3.providers.WebsocketProvider(OPTIMISM_ALCHEMY_URL, {
