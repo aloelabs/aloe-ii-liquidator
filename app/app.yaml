@@ -7,13 +7,13 @@ resources:
   memory_gb: 2
   disk_size_gb: 10
 liveness_check:
-  path: "/liveness_check"
+  path: "/liquidator_liveness_check"
   check_interval_sec: 30
   timeout_sec: 4
   failure_threshold: 4
   success_threshold: 2
 readiness_check:
-  path: "/readiness_check"
+  path: "/liquidator_readiness_check"
   check_interval_sec: 5
   timeout_sec: 4
   failure_threshold: 10
