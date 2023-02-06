@@ -16,9 +16,9 @@ readiness_check:
   path: "/readiness_check"
   check_interval_sec: 5
   timeout_sec: 4
-  failure_threshold: 2
+  failure_threshold: 10
   success_threshold: 2
-  app_start_timeout_sec: 300
+  app_start_timeout_sec: 1000
 env_variables:
   WALLET_ADDRESS: "%WALLET_ADDRESS%"
   WALLET_PRIVATE_KEY: "%WALLET_PRIVATE_KEY%"
