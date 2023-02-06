@@ -22,7 +22,7 @@ const uniqueId = (Math.random() * 1000000).toFixed(0);
 const NOT_READY_CODE: number = 503;
 const STATUS_OK: number = 200;
 
-app.get('/liveness_check', (req, res) => {
+app.get('/liquidator_liveness_check', (req, res) => {
     if (txManager.isHealthy()) {
         res.status(200);
     } else {
@@ -30,7 +30,7 @@ app.get('/liveness_check', (req, res) => {
     }
 });
 
-app.get('/readiness_check', async (req, res) => {
+app.get('/liquidator_readiness_check', async (req, res) => {
     try {
         const result: boolean = await web3.eth.net.isListening();
         console.log("Is listening?", result);
