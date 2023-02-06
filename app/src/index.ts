@@ -23,11 +23,7 @@ const NOT_READY_CODE: number = 503;
 const STATUS_OK: number = 200;
 
 app.get('/liquidator_liveness_check', (req, res) => {
-    if (txManager.isHealthy()) {
-        res.status(200);
-    } else {
-        res.status(500);
-    }
+    res.status(STATUS_OK).send({"status": "ok"});
 });
 
 app.get('/liquidator_readiness_check', async (req, res) => {
