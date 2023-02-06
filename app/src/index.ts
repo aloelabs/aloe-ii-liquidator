@@ -41,7 +41,7 @@ app.get('/liquidator_readiness_check', async (req, res) => {
         const msg: string = (e as Error).message;
         return res.status(NOT_READY_CODE).send({"error": msg}) 
     }
-    if (txManager.isHealthy()) {
+    if (!txManager.isHealthy()) {
         return res.status(NOT_READY_CODE).send({"error": "TXManager Unhealthy"});
     }
     return res.status(STATUS_OK).send({"status": "ok"})
