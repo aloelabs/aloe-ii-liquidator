@@ -3,7 +3,7 @@
 Liquidates undercollateralized Aloe II Borrower accounts using UniswapV3 flash swaps as a source of capital. 
 
 ## Disclaimer
-This is experimental software and is provided on an "as is" and "as available" basis. We do not provide any warranties and will not be liable for any loss incurred through any use of this codebase.
+Aloe Labs is not responsible for any losses incurred by using this software. Use at your own risk. This software is provided as-is, without warranty of any kind, express or implied.
 
 # Usage
 ## Setup
