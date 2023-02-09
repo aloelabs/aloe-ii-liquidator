@@ -68,7 +68,7 @@ let provider = new Web3.providers.WebsocketProvider(NODE_PROVIDER_URL, {
 Note: the change shown above assumes that the `NODE-PROVIDER-URL` begins with a `wss` because we use a `WebsocketProvider`. If you'd like to connect to your node provider using a different protocol (eg. `IPC` or `http`) you'll have to change `new Web3.providers.WebsocketProvider` to the corresponding protocol.
 
 # Environment Variables
-| Syntax      | Description |
+| Name      | Description |
 | ----------- | ----------- |
 | `WALLET_ADDRESS` | **Required**. Address which receives the liquidation reward on success. |
 | `WALLET_PRIVATE_KEY` | **Required**. Used by the `TXManager` to create the `Account` object that sends and signs liquidation transactions. |
