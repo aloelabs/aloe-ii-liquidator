@@ -2,6 +2,9 @@
 
 Liquidates undercollateralized Aloe II Borrower accounts using UniswapV3 flash swaps as a source of capital. 
 
+## Disclaimer
+This is experimental software and is provided on an "as is" and "as available" basis. We do not provide any warranties and will not be liable for any loss incurred through any use of this codebase.
+
 # Usage
 ## Setup
 Before running, be sure to create a `.env` file in the `app/` directory that contains the fields specified by the `.env.template`.
@@ -22,8 +25,8 @@ Specifies a `POLLING_INTERVAL` in `index.ts` which generates a list of all the B
     2. If gas estimate returns an error, the borrower is deemed solvent.
 2. TXManager attempts liquidation. If it fails, retries with a gas cost that is 10% higher than the previous amount.
 
-## Notes
-# Node Provider
+# Notes
+## Node Provider
 This implementation connects to an Alchemy node using a websocket connection. If you'd like to use a different node provider, change the following line:
 ```typescript
 const OPTIMISM_ALCHEMY_URL = `wss://opt-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY!}`;
@@ -67,7 +70,7 @@ let provider = new Web3.providers.WebsocketProvider(NODE_PROVIDER_URL, {
 ```
 Note: the change shown above assumes that the `NODE-PROVIDER-URL` begins with a `wss` because we use a `WebsocketProvider`. If you'd like to connect to your node provider using a different protocol (eg. `IPC` or `http`) you'll have to change `new Web3.providers.WebsocketProvider` to the corresponding protocol.
 
-# Environment Variables
+## Environment Variables
 | Name      | Description |
 | ----------- | ----------- |
 | `WALLET_ADDRESS` | **Required**. Address which receives the liquidation reward on success. |
@@ -76,4 +79,4 @@ Note: the change shown above assumes that the `NODE-PROVIDER-URL` begins with a 
 | `FACTORY_ADDRESS` | **Required**. Address of the Aloe II Factory that is responsible for creating borrowers.|
 | `CREATE_ACCOUNT_TOPIC_ID` | **Required**. Specifies the topic that provides the address of the newly created borrower. |
 | `LIQUIDATOR_ADDRESS` | **Required**. Address of the liquidator contract on-chain. See `app/addresses.md` for details. |
-| `SLACK_WEBHOOK0`, `SLACK_WEBHOOK1`, `SLACK_WEBHOOK2` | *OPTIONAL* Webhooks setup to receive logs from the liquidator |
+| `SLACK_WEBHOOK0`, `SLACK_WEBHOOK1`, `SLACK_WEBHOOK2` | *OPTIONAL.* Webhooks setup to receive logs from the liquidator |
