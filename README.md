@@ -39,34 +39,12 @@ const NODE_PROVIDER_URL = <NODE-PROVIDER-URL>;
 
 and the following line: 
 ```typescript
-let provider = new Web3.providers.WebsocketProvider(OPTIMISM_ALCHEMY_URL, {
-    clientConfig: {
-        keepalive: true,
-        keepaliveInterval: 60000, // ms
-    },
-    reconnect: {
-        auto: true,
-        delay: 5000,
-        maxAttempts: 5,
-        onTimeout: false,
-    },
-});
+let provider = new Web3.providers.WebsocketProvider(OPTIMISM_ALCHEMY_URL, {...});
 ```
 to
 
 ```typescript
-let provider = new Web3.providers.WebsocketProvider(NODE_PROVIDER_URL, {
-    clientConfig: {
-        keepalive: true,
-        keepaliveInterval: 60000, // ms
-    },
-    reconnect: {
-        auto: true,
-        delay: 5000,
-        maxAttempts: 5,
-        onTimeout: false,
-    },
-});
+let provider = new Web3.providers.WebsocketProvider(NODE_PROVIDER_URL, {...});
 ```
 Note: the change shown above assumes that the `NODE-PROVIDER-URL` begins with a `wss` because we use a `WebsocketProvider`. If you'd like to connect to your node provider using a different protocol (eg. `IPC` or `http`) you'll have to change `new Web3.providers.WebsocketProvider` to the corresponding protocol.
 
@@ -75,8 +53,8 @@ Note: the change shown above assumes that the `NODE-PROVIDER-URL` begins with a 
 | ----------- | ----------- |
 | `WALLET_ADDRESS` | **Required**. Address which receives the liquidation reward on success. |
 | `WALLET_PRIVATE_KEY` | **Required**. Used by the `TXManager` to create the `Account` object that sends and signs liquidation transactions. |
-| `ALCHEMY_API_KEY` | Used to initialize the `Web3` client that gets information from the blockchain and sends transactions.|
+| `ALCHEMY_API_KEY` | **Required** Used to initialize the `Web3` client that gets information from the blockchain and sends transactions. This implementation uses Alchemy as the node provider, if you want to use a different node provider, see sub section `Node Provider`. |
 | `FACTORY_ADDRESS` | **Required**. Address of the Aloe II Factory that is responsible for creating borrowers.|
 | `CREATE_ACCOUNT_TOPIC_ID` | **Required**. Specifies the topic that provides the address of the newly created borrower. |
 | `LIQUIDATOR_ADDRESS` | **Required**. Address of the liquidator contract on-chain. See `app/addresses.md` for details. |
-| `SLACK_WEBHOOK0`, `SLACK_WEBHOOK1`, `SLACK_WEBHOOK2` | *OPTIONAL.* Webhooks setup to receive logs from the liquidator |
+| `SLACK_WEBHOOK0`, `SLACK_WEBHOOK1`, `SLACK_WEBHOOK2` | *Required, if using Slack to receive messages.* Webhooks are of the form `https://hooks.slack.com/services/<SLACK_WEBHOOK0>/<SLACK_WEBHOOK1>/<SLACK_WEBHOOK2>`. We pass in the parts of the webhook this way because of the way `.env` deals with links. If either `SLACK_WEBHOOK0`, `SLACK_WEBHOOK1`, or `SLACK_WEBHOOK2` is not provided, then we log an error message to the console and exit with code 1. |

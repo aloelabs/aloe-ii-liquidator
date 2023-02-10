@@ -15,7 +15,11 @@ import TXManager from "./TxManager";
 dotenv.config();
 const POLLING_INTERVAL = 60_000;
 const OPTIMISM_ALCHEMY_URL = `wss://opt-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY!}`;
-const SLACK_WEBHOOK_URL = `https://hooks.slack.com/services/${process.env.SLACK_WEBHOOK0!}/${process.env.SLACK_WEBHOOK1!}/${process.env.SLACK_WEBHOOK2!}`;
+if (process.env.SLACK_WEBHOOK0 === undefined || process.env.SLACK_WEBHOOK1 === undefined || process.env.SLACK_WEBHOOK2 === undefined) {
+    console.log("SLACK_WEBHOOK0, SLACK_WEBHOOK1, SLACK_WEBHOOK2 must all be provided to send logs. If you're not sending logs to Slack, comment out the corresponding lines in winston.configure.");
+    process.exit(1);
+}
+const SLACK_WEBHOOK_URL = `https://hooks.slack.com/services/${process.env.SLACK_WEBHOOK0}/${process.env.SLACK_WEBHOOK1}/${process.env.SLACK_WEBHOOK2}`;
 const port = process.env.PORT || 8080;
 const app = express();
 const uniqueId = (Math.random() * 1000000).toFixed(0);
