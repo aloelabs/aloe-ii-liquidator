@@ -15,7 +15,7 @@ import TXManager from "./TxManager";
 dotenv.config();
 const POLLING_INTERVAL = 60_000;
 const OPTIMISM_ALCHEMY_URL = `wss://opt-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY!}`;
-const SLACK_WEBHOOK_URL = `https://hooks.slack.com/services/${process.env.SLACK_WEBHOOK0!}/${process.env.SLACK_WEBHOOK1!}/${process.env.SLACK_WEBHOOK2!}`;
+const SLACK_WEBHOOK_URL = `https://hooks.slack.com/services/${process.env.SLACK_WEBHOOK0}/${process.env.SLACK_WEBHOOK1}/${process.env.SLACK_WEBHOOK2}`;
 const port = process.env.PORT || 8080;
 const app = express();
 const uniqueId = (Math.random() * 1000000).toFixed(0);
@@ -70,22 +70,29 @@ const txManager = new TXManager(web3);
 txManager.init();
 
 // configure winston
-winston.configure({
-    format: winston.format.combine(winston.format.splat(), winston.format.simple()),
-    transports: [
-        new winston.transports.Console({
-            level: 'debug',
-            handleExceptions: true,
-        }),
-        new winston.transports.File({
-            level: 'debug',
-            filename: 'liquidation-bot-debug.log',
-            maxsize: 100000,
-        }),
+let transportList: winston.transport[] = [
+    new winston.transports.Console({
+        level: 'debug',
+        handleExceptions: true,
+    }),
+    new winston.transports.File({
+        level: 'debug',
+        filename: 'liquidation-bot-debug.log',
+        maxsize: 100000,
+    }),
+];
+
+if ('SLACK_WEBHOOK0' in process.env && 'SLACK_WEBHOOK1' in process.env && 'SLACK_WEBHOOK2' in process.env) {
+    transportList.push(
         new SlackHook(SLACK_WEBHOOK_URL, {
             level: 'info',
         }),
-    ],
+    )
+}
+
+winston.configure({
+    format: winston.format.combine(winston.format.splat(), winston.format.simple()),
+    transports: transportList,
     exitOnError: false,
 });
 
