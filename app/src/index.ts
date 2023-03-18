@@ -9,8 +9,8 @@ dotenv.config();
 const OPTIMISM_ALCHEMY_URL = `wss://opt-mainnet.g.alchemy.com/v2/${process.env
   .ALCHEMY_API_KEY!}`;
 const SLACK_WEBHOOK_URL = `https://hooks.slack.com/services/${process.env
-  .SLACK_WEBHOOK0!}/${process.env.SLACK_WEBHOOK1!}/${process.env
-  .SLACK_WEBHOOK2!}`;
+  .SLACK_WEBHOOK0}/${process.env.SLACK_WEBHOOK1}/${process.env
+  .SLACK_WEBHOOK2}`;
 const port = process.env.PORT || 8080;
 const app = express();
 const STATUS_OK: number = 200;
@@ -39,26 +39,37 @@ app.get("/liquidator_readiness_check", async (req, res) => {
   return res.status(STATUS_OK).send({ status: "ok", uptime, responsetime });
 });
 
+const transportList: winston.transport[] = [
+  new winston.transports.Console({
+    level: "debug",
+    handleExceptions: true,
+  }),
+  new winston.transports.File({
+    level: "debug",
+    filename: "liquidation-bot-debug.log",
+    maxFiles: 1,
+    maxsize: 100000,
+  }),
+];
+
+if (
+  "SLACK_WEBHOOK0" in process.env &&
+  "SLACK_WEBHOOK1" in process.env &&
+  "SLACK_WEBHOOK2" in process.env
+) {
+  transportList.push(
+    new SlackHook(SLACK_WEBHOOK_URL, {
+      level: "info",
+    })
+  );
+}
+
 winston.configure({
   format: winston.format.combine(
     winston.format.splat(),
     winston.format.simple()
   ),
-  transports: [
-    new winston.transports.Console({
-      level: "debug",
-      handleExceptions: true,
-    }),
-    new winston.transports.File({
-      level: "debug",
-      filename: "liquidation-bot-debug.log",
-      maxFiles: 1,
-      maxsize: 100000,
-    }),
-    new SlackHook(SLACK_WEBHOOK_URL, {
-      level: "info",
-    }),
-  ],
+  transports: transportList,
   exitOnError: false,
 });
 
