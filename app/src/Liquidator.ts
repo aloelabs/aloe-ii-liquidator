@@ -1,23 +1,22 @@
 import Web3 from "web3";
-import Websock from "web3";
 import { Log } from "web3-core";
 import { Contract } from "web3-eth-contract";
 import { AbiItem } from "web3-utils";
 import LiquidatorABIJson from "./abis/Liquidator.json";
 import TxManager from "./TxManager";
 import winston from "winston";
-import SlackHook from "./SlackHook";
+import Bottleneck from "bottleneck";
 
 const FACTORY_ADDRESS: string = process.env.FACTORY_ADDRESS!;
 const CREATE_ACCOUNT_TOPIC_ID: string = process.env.CREATE_ACCOUNT_TOPIC_ID!;
-const SLACK_WEBHOOK_URL = `https://hooks.slack.com/services/${process.env
-  .SLACK_WEBHOOK0!}/${process.env.SLACK_WEBHOOK1!}/${process.env
-  .SLACK_WEBHOOK2!}`;
 const WALLET_ADDRESS = process.env.WALLET_ADDRESS!;
 const ALOE_INITIAL_DEPLOY = 0;
 const POLLING_INTERVAL = 60_000;
 const STATUS_HEALTHY = 200;
 const STATUS_NOT_HEALTHY = 503;
+const REQUEST_RATE_LIMIT = 250;
+const ERROR_THRESHOLD = 5;
+const GAS_LIMIT = 3_000_000;
 
 export type HealthCheckResponse = {
   code: number;
@@ -31,6 +30,8 @@ export default class Liquidator {
   private txManager: TxManager;
   private borrowers: string[];
   private uniqueId: string;
+  private limiter: Bottleneck;
+  private errorCount: number;
 
   constructor(jsonRpcURL: string, liquidatorAddress: string) {
     this.pollingInterval = null;
@@ -46,7 +47,6 @@ export default class Liquidator {
         onTimeout: false,
       },
     });
-
     this.web3 = new Web3(provider);
     this.web3.eth.handleRevert = true;
     this.liquidatorContract = new this.web3.eth.Contract(
@@ -56,13 +56,17 @@ export default class Liquidator {
     this.txManager = new TxManager(this.web3);
     this.borrowers = [];
     this.uniqueId = Math.floor(100000 + Math.random() * 900000).toString();
+    this.limiter = new Bottleneck({
+      minTime: REQUEST_RATE_LIMIT,
+    });
+    this.errorCount = 0;
   }
 
   public start() {
     winston.log("info", `🔋 Powering up liquidation bot #${this.uniqueId}`);
     this.txManager.init();
 
-    this.collect_borrowers(ALOE_INITIAL_DEPLOY, this.borrowers);
+    this.collectBorrowers(ALOE_INITIAL_DEPLOY);
 
     this.pollingInterval = setInterval(() => {
       console.log("Scanning borrowers...");
@@ -87,6 +91,12 @@ export default class Liquidator {
   }
 
   public async isHealthy(): Promise<HealthCheckResponse> {
+    if (this.errorCount > ERROR_THRESHOLD) {
+      return {
+        code: STATUS_NOT_HEALTHY,
+        message: "Liquidator error threshold exceeded",
+      };
+    }
     try {
       const result: boolean = await this.web3.eth.net.isListening();
       console.log("Is listening?", result);
@@ -107,7 +117,7 @@ export default class Liquidator {
       return {
         code: STATUS_NOT_HEALTHY,
         message: "transaction manager is not healthy",
-      }
+      };
     }
     return {
       code: STATUS_HEALTHY,
@@ -115,20 +125,28 @@ export default class Liquidator {
     };
   }
 
-  public getUniqueId(): string {
-    return this.uniqueId;
+  private collectBorrowersCallback(error: Error, result: Log) {
+    if (!error) {
+      const borrowerAddress: string = Liquidator.formatAddress(result.data);
+      if (!this.borrowers.includes(borrowerAddress)) {
+        winston.log(
+          "debug",
+          `Detected new borrower! Adding \`${borrowerAddress}\` to global list (${this.borrowers.length} total).`
+        );
+        this.borrowers.push(borrowerAddress);
+      } else {
+        winston.log(
+          "debug",
+          `Received duplicate creation event for borrower ${borrowerAddress}`
+        );
+      }
+    } else {
+      this.errorCount += 1;
+      winston.log("error", `Error when collecting borrowers: ${error}`);
+    }
   }
 
-  static format_address(hexString: string): string {
-    // Check that the string starts with '0x'
-    let result: string = "0x";
-    // Addresses are 40 characters long, but we may have leading zeroes, so we should
-    // take the unneeded 0s out
-    result = result.concat(hexString.substring(hexString.length - 40));
-    return result;
-  }
-
-  private collect_borrowers(block: number, borrowers: string[]) {
+  private collectBorrowers(block: number) {
     this.web3.eth.subscribe(
       "logs",
       {
@@ -136,39 +154,13 @@ export default class Liquidator {
         topics: [CREATE_ACCOUNT_TOPIC_ID],
         fromBlock: block,
       },
-      function (error: Error, result: Log) {
-        if (!error) {
-          const borrowerAddress: string = Liquidator.format_address(
-            result.data
-          );
-          if (!borrowers.includes(borrowerAddress)) {
-            winston.log(
-              "debug",
-              `Detected new borrower! Adding \`${borrowerAddress}\` to global list (${borrowers.length} total).`
-            );
-            borrowers.push(borrowerAddress);
-          } else {
-            winston.log(
-              "debug",
-              `Received duplicate creation event for borrower ${borrowerAddress}`
-            );
-          }
-        } else {
-          winston.log("error", `Error when collecting borrowers: ${error}`);
-        }
-      }
+      this.collectBorrowersCallback.bind(this)
     );
   }
 
   private scan(borrowers: string[]): void {
-    // TODO: spread these out over time, so we don't get rate limited
-    // TODO: spread these out over time, so we don't get rate limited
-    // TODO: spread these out over time, so we don't get rate limited
-    const promise: Promise<void[]> = Promise.all(
-      borrowers.map(async (borrower) => {
-        // TODO: spread these out over time, so we don't get rate limited
-        // TODO: spread these out over time, so we don't get rate limited
-        // TODO: spread these out over time, so we don't get rate limited
+    borrowers.forEach((borrower) => {
+      this.limiter.schedule(async () => {
         const solvent: boolean = await this.isSolvent(borrower);
         console.log("Is solvent?", solvent, borrower);
         if (!solvent) {
@@ -182,9 +174,8 @@ export default class Liquidator {
           console.log("Adding borrower to liquidation queue...", borrower);
           this.txManager.addLiquidatableAccount(borrower);
         }
-      })
-    );
-    promise.catch((error) => console.error(error));
+      });
+    });
   }
 
   async isSolvent(borrower: string): Promise<boolean> {
@@ -205,7 +196,7 @@ export default class Liquidator {
       const estimatedGasLimit: number = await this.liquidatorContract.methods
         .liquidate(borrower, data, 1)
         .estimateGas({
-          gasLimit: 3_000_000,
+          gasLimit: GAS_LIMIT,
         });
 
       winston.log(
@@ -229,5 +220,14 @@ export default class Liquidator {
       }
       return true;
     }
-  } 
+  }
+
+  static formatAddress(hexString: string): string {
+    // Check that the string starts with '0x'
+    let result: string = "0x";
+    // Addresses are 40 characters long, but we may have leading zeroes, so we should
+    // take the unneeded 0s out
+    result = result.concat(hexString.substring(hexString.length - 40));
+    return result;
+  }
 }

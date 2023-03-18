@@ -1,20 +1,11 @@
-import Web3 from "web3";
-import { Log } from "web3-core";
-import { Contract } from "web3-eth-contract";
-import { AbiItem } from "web3-utils";
-
-import LiquidatorABIJson from "./abis/Liquidator.json";
-
 import SlackHook from "./SlackHook";
 
 import dotenv from "dotenv";
 import express from "express";
 import winston from "winston";
-import TXManager from "./TxManager";
 import Liquidator, { HealthCheckResponse } from "./Liquidator";
 
 dotenv.config();
-const POLLING_INTERVAL = 60_000;
 const OPTIMISM_ALCHEMY_URL = `wss://opt-mainnet.g.alchemy.com/v2/${process.env
   .ALCHEMY_API_KEY!}`;
 const SLACK_WEBHOOK_URL = `https://hooks.slack.com/services/${process.env
@@ -22,8 +13,6 @@ const SLACK_WEBHOOK_URL = `https://hooks.slack.com/services/${process.env
   .SLACK_WEBHOOK2!}`;
 const port = process.env.PORT || 8080;
 const app = express();
-const uniqueId = (Math.random() * 1000000).toFixed(0);
-const NOT_READY_CODE: number = 503;
 const STATUS_OK: number = 200;
 const liquidators: Liquidator[] = [
   new Liquidator(OPTIMISM_ALCHEMY_URL, process.env.LIQUIDATOR_ADDRESS!),
@@ -45,7 +34,9 @@ app.get("/liquidator_readiness_check", async (req, res) => {
       }
     })
   );
-  return res.status(STATUS_OK).send({ status: "ok" });
+  const uptime = process.uptime();
+  const responsetime = process.hrtime();
+  return res.status(STATUS_OK).send({ status: "ok", uptime, responsetime });
 });
 
 winston.configure({
@@ -61,6 +52,7 @@ winston.configure({
     new winston.transports.File({
       level: "debug",
       filename: "liquidation-bot-debug.log",
+      maxFiles: 1,
       maxsize: 100000,
     }),
     new SlackHook(SLACK_WEBHOOK_URL, {
@@ -79,7 +71,7 @@ function start() {
 start();
 
 const server = app.listen(port, () => {
-  console.log(`Example app listening at http://localhost:${port}`);
+  console.log(`Liquidation bot listening on port ${port}`);
 });
 
 process.on("SIGINT", () => {
