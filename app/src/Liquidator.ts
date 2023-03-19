@@ -11,10 +11,13 @@ const FACTORY_ADDRESS: string = process.env.FACTORY_ADDRESS!;
 const CREATE_ACCOUNT_TOPIC_ID: string = process.env.CREATE_ACCOUNT_TOPIC_ID!;
 const WALLET_ADDRESS = process.env.WALLET_ADDRESS!;
 const ALOE_INITIAL_DEPLOY = 0;
-const POLLING_INTERVAL = 60_000;
+const POLLING_INTERVAL_MS = 60_000;
+const CLIENT_KEEPALIVE_INTERVAL_MS = 60_000;
+const RECONNECT_DELAY_MS = 5_000;
+const RECONNECT_MAX_ATTEMPTS = 5;
 const STATUS_HEALTHY = 200;
 const STATUS_NOT_HEALTHY = 503;
-const REQUEST_RATE_LIMIT = 250;
+const MS_BETWEEN_REQUESTS = 250;
 const ERROR_THRESHOLD = 5;
 const GAS_LIMIT = 3_000_000;
 
@@ -38,12 +41,12 @@ export default class Liquidator {
     const provider = new Web3.providers.WebsocketProvider(jsonRpcURL, {
       clientConfig: {
         keepalive: true,
-        keepaliveInterval: 60000, // ms
+        keepaliveInterval: CLIENT_KEEPALIVE_INTERVAL_MS,
       },
       reconnect: {
         auto: true,
-        delay: 5000,
-        maxAttempts: 5,
+        delay: RECONNECT_DELAY_MS,
+        maxAttempts: RECONNECT_MAX_ATTEMPTS,
         onTimeout: false,
       },
     });
@@ -57,7 +60,7 @@ export default class Liquidator {
     this.borrowers = [];
     this.uniqueId = Math.floor(100000 + Math.random() * 900000).toString();
     this.limiter = new Bottleneck({
-      minTime: REQUEST_RATE_LIMIT,
+      minTime: MS_BETWEEN_REQUESTS,
     });
     this.errorCount = 0;
   }
@@ -71,7 +74,7 @@ export default class Liquidator {
     this.pollingInterval = setInterval(() => {
       console.log("Scanning borrowers...");
       this.scan(this.borrowers);
-    }, POLLING_INTERVAL);
+    }, POLLING_INTERVAL_MS);
   }
 
   public async stop(): Promise<void> {
