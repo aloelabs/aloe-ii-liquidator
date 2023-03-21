@@ -4,9 +4,12 @@ import dotenv from "dotenv";
 import express from "express";
 import winston from "winston";
 import Liquidator, { HealthCheckResponse } from "./Liquidator";
+import Bottleneck from "bottleneck";
 
 dotenv.config();
 const OPTIMISM_ALCHEMY_URL = `wss://opt-mainnet.g.alchemy.com/v2/${process.env
+  .ALCHEMY_API_KEY!}`;
+const ARBITRUM_ALCHEMY_URL = `wss://arb-mainnet.g.alchemy.com/v2/${process.env
   .ALCHEMY_API_KEY!}`;
 const SLACK_WEBHOOK_URL = `https://hooks.slack.com/services/${process.env
   .SLACK_WEBHOOK0}/${process.env.SLACK_WEBHOOK1}/${process.env
@@ -14,8 +17,13 @@ const SLACK_WEBHOOK_URL = `https://hooks.slack.com/services/${process.env
 const port = process.env.PORT || 8080;
 const app = express();
 const STATUS_OK: number = 200;
+const MS_BETWEEN_REQUESTS = 250;
+const limiter = new Bottleneck({
+  minTime: MS_BETWEEN_REQUESTS,
+});
 const liquidators: Liquidator[] = [
-  new Liquidator(OPTIMISM_ALCHEMY_URL, process.env.LIQUIDATOR_ADDRESS!),
+  new Liquidator(OPTIMISM_ALCHEMY_URL, process.env.LIQUIDATOR_ADDRESS_OPTIMISM!, limiter),
+  new Liquidator(ARBITRUM_ALCHEMY_URL, process.env.LIQUIDATOR_ADDRESS_ARBITRUM!, limiter),
 ];
 
 app.get("/liquidator_liveness_check", (req, res) => {

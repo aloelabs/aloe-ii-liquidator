@@ -17,7 +17,6 @@ const RECONNECT_DELAY_MS = 5_000;
 const RECONNECT_MAX_ATTEMPTS = 5;
 const STATUS_HEALTHY = 200;
 const STATUS_NOT_HEALTHY = 503;
-const MS_BETWEEN_REQUESTS = 250;
 const ERROR_THRESHOLD = 5;
 const GAS_LIMIT = 3_000_000;
 
@@ -36,7 +35,13 @@ export default class Liquidator {
   private limiter: Bottleneck;
   private errorCount: number;
 
-  constructor(jsonRpcURL: string, liquidatorAddress: string) {
+  /**
+   * Creates a new Liquidator instance.
+   * @param jsonRpcURL the URL of the JSON-RPC endpoint to use
+   * @param liquidatorAddress the address of the liquidator contract
+   * @param limiter the Bottleneck instance to use for rate limiting
+   */
+  constructor(jsonRpcURL: string, liquidatorAddress: string, limiter: Bottleneck) {
     this.pollingInterval = null;
     const provider = new Web3.providers.WebsocketProvider(jsonRpcURL, {
       clientConfig: {
@@ -59,14 +64,25 @@ export default class Liquidator {
     this.txManager = new TxManager(this.web3);
     this.borrowers = [];
     this.uniqueId = Math.floor(100000 + Math.random() * 900000).toString();
-    this.limiter = new Bottleneck({
-      minTime: MS_BETWEEN_REQUESTS,
-    });
+    this.limiter = limiter;
     this.errorCount = 0;
   }
 
+  /**
+   * Logs a message when the liquidator starts.
+   */
+  private async logStart() {
+    const chainId = await this.web3.eth.getChainId();
+    winston.log("info", `🔋 Powering up liquidation bot #${this.uniqueId} on ${Liquidator.getChainName(chainId)}`);
+  }
+
+  /**
+   * Starts the liquidator.
+   * Logs the start message and initializes the transaction manager.
+   * Then, it scans the borrowers and starts the polling interval.
+   */
   public start() {
-    winston.log("info", `🔋 Powering up liquidation bot #${this.uniqueId}`);
+    this.logStart();
     this.txManager.init();
 
     this.collectBorrowers(ALOE_INITIAL_DEPLOY);
@@ -77,6 +93,10 @@ export default class Liquidator {
     }, POLLING_INTERVAL_MS);
   }
 
+  /**
+   * Shuts down the liquidator.
+   * @returns {Promise<void>} A promise that resolves when the liquidator has shut down.
+   */
   public async stop(): Promise<void> {
     winston.log("info", `🪫 Powering down liquidation bot #${this.uniqueId}`);
     if (this.pollingInterval) {
@@ -93,7 +113,14 @@ export default class Liquidator {
     });
   }
 
+  /**
+   * Checks if the liquidator is healthy.
+   * This includes checking that the liquidator hasn't errored too many times,
+   * that the node is listening to peers, and that the transaction manager is healthy.
+   * @returns {Promise<HealthCheckResponse>} The health check response.
+   */
   public async isHealthy(): Promise<HealthCheckResponse> {
+    // First check if the Liquidator has errored too many times
     if (this.errorCount > ERROR_THRESHOLD) {
       return {
         code: STATUS_NOT_HEALTHY,
@@ -101,6 +128,7 @@ export default class Liquidator {
       };
     }
     try {
+      // Check if the node is listening to peers
       const result: boolean = await this.web3.eth.net.isListening();
       console.log("Is listening?", result);
       if (!result) {
@@ -116,18 +144,25 @@ export default class Liquidator {
         message: msg,
       };
     }
+    // Check if the transaction manager is healthy
     if (!this.txManager.isHealthy()) {
       return {
         code: STATUS_NOT_HEALTHY,
         message: "transaction manager is not healthy",
       };
     }
+    // If everythings checks out, return healthy
     return {
       code: STATUS_HEALTHY,
       message: "healthy",
     };
   }
 
+  /**
+   * Collects the borrowers from the Aloe Factory contract.
+   * @param error 
+   * @param result 
+   */
   private collectBorrowersCallback(error: Error, result: Log) {
     if (!error) {
       const borrowerAddress: string = Liquidator.formatAddress(result.data);
@@ -149,6 +184,10 @@ export default class Liquidator {
     }
   }
 
+  /**
+   * Collects the borrowers from the Aloe Factory contract.
+   * @param block The block to start collecting borrowers from.
+   */
   private collectBorrowers(block: number) {
     this.web3.eth.subscribe(
       "logs",
@@ -161,6 +200,10 @@ export default class Liquidator {
     );
   }
 
+  /**
+   * Scans the borrowers and sends them to the transaction manager for liquidation (if they're insolvent).
+   * @param borrowers The borrowers to scan.
+   */
   private scan(borrowers: string[]): void {
     borrowers.forEach((borrower) => {
       this.limiter.schedule(async () => {
@@ -225,6 +268,31 @@ export default class Liquidator {
     }
   }
 
+  /**
+   * Gets the chain name from the chain ID.
+   * @param chainId The chain ID.
+   * @returns The chain name.
+   */
+  static getChainName(chainId: number): string {
+    switch (chainId) {
+      case 1:
+        return "mainnet";
+      case 5:
+        return "goerli";
+      case 10:
+        return "optimism";
+      case 42161:
+        return "arbitrum";
+      default:
+        return "unknown";
+    }
+  }
+
+  /**
+   * Formats an address to be 0x-prefixed and 40 characters long.
+   * @param hexString The address to format.
+   * @returns The formatted address.
+   */
   static formatAddress(hexString: string): string {
     // Check that the string starts with '0x'
     let result: string = "0x";
