@@ -1,0 +1,6 @@
+[submodule "app/contracts/lib/aloe-ii"]
+	path = app/contracts/lib/aloe-ii
+	url = https://github.com/aloelabs/aloe-ii
+[submodule "app/contracts/lib/forge-std"]
+	path = app/contracts/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
