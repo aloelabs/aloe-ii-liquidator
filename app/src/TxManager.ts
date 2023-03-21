@@ -7,10 +7,9 @@ import { Contract } from "web3-eth-contract";
 import { AbiItem } from 'web3-utils';
 import { Account } from 'web3-core'
 import LiquidatorABIJson from "./abis/Liquidator.json";
+import Liquidator from "./Liquidator";
 
 config();
-
-const ETHERSCAN_LINK = "https://optimistic.etherscan.io/tx/";
 
 const LIQUIDATOR_CONTRACT_ADDRESS: string = process.env.LIQUIDATOR_ADDRESS!;
 
@@ -37,6 +36,7 @@ export default class TXManager {
     private errorCount: number;
     
     private liquidatorContract: Contract;
+    private baseEtherscanURL: string | null = null;
 
     constructor(web3Client: Web3) {
         this.client = web3Client;
@@ -47,10 +47,11 @@ export default class TXManager {
         this.liquidatorContract = new this.client.eth.Contract(LiquidatorABIJson as AbiItem[], LIQUIDATOR_CONTRACT_ADDRESS);
     }
 
-    public async init(): Promise<void> {
+    public init(chainId: number) {
         const account: Account = this.client.eth.accounts.privateKeyToAccount(process.env.WALLET_PRIVATE_KEY!)
         const address: string = account.address;
         this.address = address;
+        this.baseEtherscanURL = Liquidator.getBaseEtherscanUrl(chainId);
     }
 
     public addLiquidatableAccount(address: string) {
@@ -117,7 +118,11 @@ export default class TXManager {
             this.client.eth.sendSignedTransaction(signedTransaction.rawTransaction!)
                 .on("receipt", async (receipt) => {
                     if (receipt.status) {
-                        log("info", `💦 Borrower \`${borrower}\` has been liquidated! ${ETHERSCAN_LINK}${receipt.transactionHash}`);
+                        if (this.baseEtherscanURL !== null) {
+                            log("info", `💦 Borrower \`${borrower}\` has been liquidated! ${this.baseEtherscanURL}${receipt.transactionHash}`);
+                        } else {
+                            log("info", `💦 Borrower \`${borrower}\` has been liquidated!`);
+                        }
                         this.pendingTransactions.delete(borrower);
                         this.borrowersInProgress = this.borrowersInProgress.filter((value) => value != borrower);
                     } else {

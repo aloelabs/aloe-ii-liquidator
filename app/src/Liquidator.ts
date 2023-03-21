@@ -41,7 +41,11 @@ export default class Liquidator {
    * @param liquidatorAddress the address of the liquidator contract
    * @param limiter the Bottleneck instance to use for rate limiting
    */
-  constructor(jsonRpcURL: string, liquidatorAddress: string, limiter: Bottleneck) {
+  constructor(
+    jsonRpcURL: string,
+    liquidatorAddress: string,
+    limiter: Bottleneck
+  ) {
     this.pollingInterval = null;
     const provider = new Web3.providers.WebsocketProvider(jsonRpcURL, {
       clientConfig: {
@@ -69,21 +73,19 @@ export default class Liquidator {
   }
 
   /**
-   * Logs a message when the liquidator starts.
-   */
-  private async logStart() {
-    const chainId = await this.web3.eth.getChainId();
-    winston.log("info", `🔋 Powering up liquidation bot #${this.uniqueId} on ${Liquidator.getChainName(chainId)}`);
-  }
-
-  /**
    * Starts the liquidator.
    * Logs the start message and initializes the transaction manager.
    * Then, it scans the borrowers and starts the polling interval.
    */
-  public start() {
-    this.logStart();
-    this.txManager.init();
+  public async start(): Promise<void> {
+    const chainId = await this.web3.eth.getChainId();
+    winston.log(
+      "info",
+      `🔋 Powering up liquidation bot #${
+        this.uniqueId
+      } on ${Liquidator.getChainName(chainId)}`
+    );
+    this.txManager.init(chainId);
 
     this.collectBorrowers(ALOE_INITIAL_DEPLOY);
 
@@ -160,8 +162,8 @@ export default class Liquidator {
 
   /**
    * Collects the borrowers from the Aloe Factory contract.
-   * @param error 
-   * @param result 
+   * @param error
+   * @param result
    */
   private collectBorrowersCallback(error: Error, result: Log) {
     if (!error) {
@@ -265,6 +267,26 @@ export default class Liquidator {
         );
       }
       return true;
+    }
+  }
+
+  /**
+   * Gets the base Etherscan URL for a given chain ID.
+   * @param chainId The chain ID.
+   * @returns The base Etherscan URL.
+   */
+  public static getBaseEtherscanUrl(chainId: number): string {
+    switch (chainId) {
+      case 1:
+        return "https://etherscan.io/tx/";
+      case 5:
+        return "https://goerli.etherscan.io/tx/";
+      case 10:
+        return "https://optimistic.etherscan.io/tx/";
+      case 42161:
+        return "https://arbiscan.io/tx/";
+      default:
+        return "https://etherscan.io/tx/";
     }
   }
 
