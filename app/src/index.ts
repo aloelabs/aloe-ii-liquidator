@@ -16,7 +16,7 @@ const SLACK_WEBHOOK_URL = `https://hooks.slack.com/services/${process.env
   .SLACK_WEBHOOK2}`;
 const port = process.env.PORT || 8080;
 const app = express();
-const STATUS_OK: number = 200;
+const STATUS_OK = 200;
 const MS_BETWEEN_REQUESTS = 250;
 const limiter = new Bottleneck({
   minTime: MS_BETWEEN_REQUESTS,

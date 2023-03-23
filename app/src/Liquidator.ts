@@ -18,7 +18,6 @@ const RECONNECT_MAX_ATTEMPTS = 5;
 const STATUS_HEALTHY = 200;
 const STATUS_NOT_HEALTHY = 503;
 const ERROR_THRESHOLD = 5;
-const GAS_LIMIT = 3_000_000;
 
 export type HealthCheckResponse = {
   code: number;
@@ -26,6 +25,7 @@ export type HealthCheckResponse = {
 };
 
 export default class Liquidator {
+  public static readonly GAS_LIMIT = 3_000_000;
   private pollingInterval: NodeJS.Timer | null;
   private web3: Web3;
   private liquidatorContract: Contract;
@@ -63,9 +63,9 @@ export default class Liquidator {
     this.web3.eth.handleRevert = true;
     this.liquidatorContract = new this.web3.eth.Contract(
       LiquidatorABIJson as AbiItem[],
-      liquidatorAddress
+      liquidatorAddress,
     );
-    this.txManager = new TxManager(this.web3);
+    this.txManager = new TxManager(this.web3, this.liquidatorContract);
     this.borrowers = [];
     this.uniqueId = Math.floor(100000 + Math.random() * 900000).toString();
     this.limiter = limiter;
@@ -244,7 +244,7 @@ export default class Liquidator {
       const estimatedGasLimit: number = await this.liquidatorContract.methods
         .liquidate(borrower, data, 1)
         .estimateGas({
-          gasLimit: GAS_LIMIT,
+          gasLimit: Liquidator.GAS_LIMIT,
         });
 
       winston.log(
