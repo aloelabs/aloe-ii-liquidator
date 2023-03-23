@@ -21,9 +21,10 @@ const MS_BETWEEN_REQUESTS = 250;
 const limiter = new Bottleneck({
   minTime: MS_BETWEEN_REQUESTS,
 });
+const LIQUIDATOR_ADDRESS = process.env.LIQUIDATOR_ADDRESS!;
 const liquidators: Liquidator[] = [
-  new Liquidator(OPTIMISM_ALCHEMY_URL, process.env.LIQUIDATOR_ADDRESS_OPTIMISM!, limiter),
-  new Liquidator(ARBITRUM_ALCHEMY_URL, process.env.LIQUIDATOR_ADDRESS_ARBITRUM!, limiter),
+  new Liquidator(OPTIMISM_ALCHEMY_URL, LIQUIDATOR_ADDRESS, limiter),
+  new Liquidator(ARBITRUM_ALCHEMY_URL, LIQUIDATOR_ADDRESS, limiter),
 ];
 
 app.get("/liquidator_liveness_check", (req, res) => {
