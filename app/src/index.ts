@@ -3,7 +3,7 @@ import SlackHook from "./SlackHook";
 import dotenv from "dotenv";
 import express from "express";
 import winston from "winston";
-import Liquidator, { HealthCheckResponse } from "./Liquidator";
+import Liquidator from "./Liquidator";
 import Bottleneck from "bottleneck";
 
 dotenv.config();
@@ -32,20 +32,19 @@ app.get("/liquidator_liveness_check", (req, res) => {
 });
 
 app.get("/liquidator_readiness_check", async (req, res) => {
-  await Promise.all(
+  const results = await Promise.all(
     liquidators.map(async (liquidator) => {
-      const healthCheckResponse: HealthCheckResponse =
-        await liquidator.isHealthy();
-      if (healthCheckResponse.code !== STATUS_OK) {
-        return res
-          .status(healthCheckResponse.code)
-          .send({ error: healthCheckResponse.message });
-      }
+      return liquidator.isHealthy();
     })
   );
-  const uptime = process.uptime();
-  const responsetime = process.hrtime();
-  return res.status(STATUS_OK).send({ status: "ok", uptime, responsetime });
+  const unHealthyLiquidator = results.find((result) => result.code !== STATUS_OK);
+  if (unHealthyLiquidator !== undefined) {
+    return res.status(unHealthyLiquidator.code).send(unHealthyLiquidator);
+  } else {
+    const uptime = process.uptime();
+    const responsetime = process.hrtime();
+    return res.status(STATUS_OK).send({ status: "ok", uptime, responsetime });
+  }
 });
 
 const transportList: winston.transport[] = [

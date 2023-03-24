@@ -129,23 +129,6 @@ export default class Liquidator {
         message: "Liquidator error threshold exceeded",
       };
     }
-    try {
-      // Check if the node is listening to peers
-      const result: boolean = await this.web3.eth.net.isListening();
-      console.log("Is listening?", result);
-      if (!result) {
-        return {
-          code: STATUS_NOT_HEALTHY,
-          message: "unable to listen to peers",
-        };
-      }
-    } catch (e) {
-      const msg: string = (e as Error).message;
-      return {
-        code: STATUS_NOT_HEALTHY,
-        message: msg,
-      };
-    }
     // Check if the transaction manager is healthy
     if (!this.txManager.isHealthy()) {
       return {
