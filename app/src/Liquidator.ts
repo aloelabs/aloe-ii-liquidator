@@ -7,6 +7,8 @@ import TxManager from "./TxManager";
 import winston from "winston";
 import Bottleneck from "bottleneck";
 
+export const MAX_STRAIN = 10;
+export const MIN_STRAIN = 1;
 const FACTORY_ADDRESS: string = process.env.FACTORY_ADDRESS!;
 const CREATE_ACCOUNT_TOPIC_ID: string = process.env.CREATE_ACCOUNT_TOPIC_ID!;
 const WALLET_ADDRESS = process.env.WALLET_ADDRESS!;
@@ -225,7 +227,7 @@ export default class Liquidator {
         data
       );
       const estimatedGasLimit: number = await this.liquidatorContract.methods
-        .liquidate(borrower, data, 1)
+        .liquidate(borrower, data, MIN_STRAIN)
         .estimateGas({
           gasLimit: Liquidator.GAS_LIMIT,
         });
