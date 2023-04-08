@@ -5,13 +5,13 @@ import { log } from "winston";
 import { TransactionConfig, TransactionReceipt } from "web3-eth";
 import { Contract } from "web3-eth-contract";
 import { Account } from "web3-core";
-import Liquidator, { MAX_STRAIN, MIN_STRAIN } from "./Liquidator";
+import Liquidator from "./Liquidator";
 
 config();
 
 const MAX_RETRIES_ALLOWED: number = 10;
 const GAS_INCREASE_FACTOR: number = 1.10;
-const MAX_ACCEPTABLE_ERRORS = 1;
+const MAX_ACCEPTABLE_ERRORS = 10;
 const WALLET_ADDRESS = process.env.WALLET_ADDRESS!;
 
 type LiquidationTxInfo = {
@@ -89,7 +89,7 @@ export default class TXManager {
                     gasPrice: Math.min(parseInt(currentGasPrice), parseInt(this.gasPriceMaximum)).toString(),
                     timeSent: new Date().getTime(),
                     retries: 0,
-                    currentStrain: MIN_STRAIN,
+                    currentStrain: Liquidator.MIN_STRAIN,
                 }
                 this.pendingTransactions.set(borrower, liquidationTxInfo);
             } else {
@@ -101,7 +101,7 @@ export default class TXManager {
                 }
 
                 liquidationTxInfo.retries++;
-                liquidationTxInfo.currentStrain = Math.min(liquidationTxInfo.currentStrain + 1, MAX_STRAIN);
+                liquidationTxInfo.currentStrain = Math.min(liquidationTxInfo.currentStrain + 1, Liquidator.MAX_STRAIN);
                 liquidationTxInfo.timeSent = new Date().getTime();
             }
             if (liquidationTxInfo.retries > MAX_RETRIES_ALLOWED) {
