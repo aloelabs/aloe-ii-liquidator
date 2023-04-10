@@ -8,13 +8,11 @@ import TxManager from "./TxManager";
 import winston from "winston";
 import Bottleneck from "bottleneck";
 
-const ALOE_HEALTHY_ERROR_MESSAGE = "Aloe: healthy";
-const ALOE_GRACE_ERROR_MESSAGE = "Aloe: grace";
 const FACTORY_ADDRESS: string = process.env.FACTORY_ADDRESS!;
 const CREATE_ACCOUNT_TOPIC_ID: string = process.env.CREATE_ACCOUNT_TOPIC_ID!;
 const WALLET_ADDRESS = process.env.WALLET_ADDRESS!;
 const ALOE_INITIAL_DEPLOY = 0;
-const POLLING_INTERVAL_MS = 60_000; // 2.5 minutes
+const POLLING_INTERVAL_MS = 150_000; // 2.5 minutes
 const CLIENT_KEEPALIVE_INTERVAL_MS = 60_000;
 const RECONNECT_DELAY_MS = 5_000;
 const RECONNECT_MAX_ATTEMPTS = 5;
@@ -28,8 +26,8 @@ export type HealthCheckResponse = {
 };
 
 enum LiquidationError {
-  Healthy = "healthy",
-  Grace = "grace",
+  Healthy = "Aloe: healthy",
+  Grace = "Aloe: grace",
   Unknown = "unknown",
 }
 
@@ -253,12 +251,12 @@ export default class Liquidator {
       if (unleashLiquidationTime === "0") {
         winston.log(
           "error",
-          `🚨 ${shortName} is not healthy, but has an unleashLiquidationTime of 0. This is not expected. Error encountered: ${estimatedGasResult.errorMsg}.`
+          `🚨 Something unexpected happened. ${shortName} reverted with an unknown message and has an unleashLiquidationTime of 0. Error encountered: ${estimatedGasResult.errorMsg}.`
         );
       } else {
         winston.log(
           "debug",
-          `🚨 ${shortName} is not healthy, but has an unleashLiquidationTime of ${unleashLiquidationTime}. This is likely a result of the bug with repay/modify.`
+          `🚨 ${shortName} is likely healthy, but has an unleashLiquidationTime of ${unleashLiquidationTime}. This is likely a result of the bug with repay/modify.`
         );
       }
       return true;
@@ -290,9 +288,9 @@ export default class Liquidator {
     } catch (e) {
       const errorMsg = (e as Error).message;
       let errorType: LiquidationError = LiquidationError.Unknown;
-      if (errorMsg.includes(ALOE_HEALTHY_ERROR_MESSAGE)) {
+      if (errorMsg.includes(LiquidationError.Healthy)) {
         errorType = LiquidationError.Healthy;
-      } else if (errorMsg.includes(ALOE_GRACE_ERROR_MESSAGE)) {
+      } else if (errorMsg.includes(LiquidationError.Grace)) {
         errorType = LiquidationError.Grace;
       }
       return {
