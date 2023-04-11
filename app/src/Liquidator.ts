@@ -3,6 +3,7 @@ import { Log } from "web3-core";
 import { Contract } from "web3-eth-contract";
 import { AbiItem } from "web3-utils";
 import LiquidatorABIJson from "./abis/Liquidator.json";
+import MarginAccountABIJson from "./abis/MarginAccount.json";
 import TxManager from "./TxManager";
 import winston from "winston";
 import Bottleneck from "bottleneck";
@@ -11,7 +12,7 @@ const FACTORY_ADDRESS: string = process.env.FACTORY_ADDRESS!;
 const CREATE_ACCOUNT_TOPIC_ID: string = process.env.CREATE_ACCOUNT_TOPIC_ID!;
 const WALLET_ADDRESS = process.env.WALLET_ADDRESS!;
 const ALOE_INITIAL_DEPLOY = 0;
-const POLLING_INTERVAL_MS = 60_000;
+const POLLING_INTERVAL_MS = 150_000; // 2.5 minutes
 const CLIENT_KEEPALIVE_INTERVAL_MS = 60_000;
 const RECONNECT_DELAY_MS = 5_000;
 const RECONNECT_MAX_ATTEMPTS = 5;
@@ -24,7 +25,22 @@ export type HealthCheckResponse = {
   message: string;
 };
 
+enum LiquidationError {
+  Healthy = "Aloe: healthy",
+  Grace = "Aloe: grace",
+  Unknown = "unknown",
+}
+
+type EstimateGasLiquidationResult = {
+  success: boolean;
+  estimatedGas: number;
+  error?: LiquidationError;
+  errorMsg?: string;
+};
+
 export default class Liquidator {
+  public static readonly MAX_STRAIN = 10;
+  public static readonly MIN_STRAIN = 1;
   public static readonly GAS_LIMIT = 3_000_000;
   private pollingInterval: NodeJS.Timer | null;
   private web3: Web3;
@@ -63,7 +79,7 @@ export default class Liquidator {
     this.web3.eth.handleRevert = true;
     this.liquidatorContract = new this.web3.eth.Contract(
       LiquidatorABIJson as AbiItem[],
-      liquidatorAddress,
+      liquidatorAddress
     );
     this.txManager = new TxManager(this.web3, this.liquidatorContract);
     this.borrowers = [];
@@ -211,45 +227,78 @@ export default class Liquidator {
 
   async isSolvent(borrower: string): Promise<boolean> {
     const shortName = borrower.slice(0, 8);
-    try {
-      winston.log(
-        "debug",
-        `Checking solvency of ${shortName} via gas estimation...`
-      );
-
-      const data = this.web3.eth.abi.encodeParameter("address", WALLET_ADDRESS);
-      console.log(
-        "Checking solvency of",
-        borrower,
-        "via gas estimation...",
-        data
-      );
-      const estimatedGasLimit: number = await this.liquidatorContract.methods
-        .liquidate(borrower, data, 1)
-        .estimateGas({
-          gasLimit: Liquidator.GAS_LIMIT,
-        });
-
-      winston.log(
-        "debug",
-        `--> Received estimate (${estimatedGasLimit} gas), indicating that ${shortName} can be liquidated`
-      );
+    winston.log(
+      "debug",
+      `Checking solvency of ${shortName} via gas estimation...`
+    );
+    const estimatedGasResult: EstimateGasLiquidationResult =
+      await this.estimateGasForLiquidation(borrower, Liquidator.MAX_STRAIN);
+    if (estimatedGasResult.success) {
       return false;
-    } catch (e) {
-      const msg = (e as Error).message;
-
-      if (msg.includes("Aloe: healthy")) {
-        winston.log("debug", `--> ${shortName} is healthy`);
-      } else {
-        console.log(
-          "WARNING: Received estimation error other than 'Aloe: healthy'",
-          msg
+    } else if (estimatedGasResult.error === LiquidationError.Healthy) {
+      return true;
+    } else if (estimatedGasResult.error === LiquidationError.Grace) {
+      winston.log("info", `⏳ ${shortName} is in grace period`);
+      return true;
+    } else {
+      // Checking the unleashLiquidationTime is a workaround for a none-critical bug.
+      const borrowerContract = new this.web3.eth.Contract(
+        MarginAccountABIJson as AbiItem[],
+        borrower
+      );
+      const slot0 = await borrowerContract.methods.slot0().call();
+      const unleashLiquidationTime = slot0.unleashLiquidationTime;
+      if (unleashLiquidationTime === "0") {
+        winston.log(
+          "error",
+          `🚨 Something unexpected happened. ${shortName} reverted with an unknown message and has an unleashLiquidationTime of 0. Error encountered: ${estimatedGasResult.errorMsg}.`
         );
-        console.log(
-          "This most likely means that we just warned them and we are waiting to actually liquidate them."
+      } else {
+        winston.log(
+          "debug",
+          `🚨 ${shortName} is likely healthy, but has an unleashLiquidationTime of ${unleashLiquidationTime}. This is likely a result of the bug with repay/modify.`
         );
       }
       return true;
+    }
+  }
+
+  private async estimateGasForLiquidation(
+    borrower: string,
+    strain: number
+  ): Promise<EstimateGasLiquidationResult> {
+    const integerStrain = Math.floor(strain);
+    if (
+      integerStrain < Liquidator.MIN_STRAIN ||
+      integerStrain > Liquidator.MAX_STRAIN
+    ) {
+      throw new Error(`Invalid strain: ${strain}`);
+    }
+    const data = this.web3.eth.abi.encodeParameter("address", WALLET_ADDRESS);
+    try {
+      const estimatedGasLimit: number = await this.liquidatorContract.methods
+        .liquidate(borrower, data, integerStrain)
+        .estimateGas({
+          gasLimit: Liquidator.GAS_LIMIT,
+        });
+      return {
+        success: true,
+        estimatedGas: estimatedGasLimit,
+      };
+    } catch (e) {
+      const errorMsg = (e as Error).message;
+      let errorType: LiquidationError = LiquidationError.Unknown;
+      if (errorMsg.includes(LiquidationError.Healthy)) {
+        errorType = LiquidationError.Healthy;
+      } else if (errorMsg.includes(LiquidationError.Grace)) {
+        errorType = LiquidationError.Grace;
+      }
+      return {
+        success: false,
+        estimatedGas: 0,
+        error: errorType,
+        errorMsg,
+      };
     }
   }
 

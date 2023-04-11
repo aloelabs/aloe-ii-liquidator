@@ -9,9 +9,9 @@ import Liquidator from "./Liquidator";
 
 config();
 
-const MAX_RETRIES_ALLOWED: number = 5;
+const MAX_RETRIES_ALLOWED: number = 10;
 const GAS_INCREASE_FACTOR: number = 1.10;
-const MAX_ACCEPTABLE_ERRORS = 1;
+const MAX_ACCEPTABLE_ERRORS = 10;
 const WALLET_ADDRESS = process.env.WALLET_ADDRESS!;
 
 type LiquidationTxInfo = {
@@ -19,6 +19,7 @@ type LiquidationTxInfo = {
     gasPrice: string;
     timeSent: number;
     retries: number;
+    currentStrain: number;
 }
 
 const MAX_GAS_PRICE_FOR_CHAIN: Map<number, string> = new Map<number, string>([
@@ -88,6 +89,7 @@ export default class TXManager {
                     gasPrice: Math.min(parseInt(currentGasPrice), parseInt(this.gasPriceMaximum)).toString(),
                     timeSent: new Date().getTime(),
                     retries: 0,
+                    currentStrain: Liquidator.MIN_STRAIN,
                 }
                 this.pendingTransactions.set(borrower, liquidationTxInfo);
             } else {
@@ -98,26 +100,27 @@ export default class TXManager {
                     liquidationTxInfo.gasPrice = newGasPrice.toString();
                 }
 
-                liquidationTxInfo["retries"]++;
-                liquidationTxInfo["timeSent"] = new Date().getTime();
+                liquidationTxInfo.retries++;
+                liquidationTxInfo.currentStrain = Math.min(liquidationTxInfo.currentStrain + 1, Liquidator.MAX_STRAIN);
+                liquidationTxInfo.timeSent = new Date().getTime();
             }
-            if (liquidationTxInfo["retries"] > MAX_RETRIES_ALLOWED) {
+            if (liquidationTxInfo.retries > MAX_RETRIES_ALLOWED) {
                 log("debug", `Exceeded maximum amount of retries when attempting to liquidate borrower: ${borrower}`);
                 continue;
             }
             const encodedAddress = this.client.eth.abi.encodeParameter("address", WALLET_ADDRESS);
             const currentNonce = await this.client.eth.getTransactionCount(WALLET_ADDRESS, "pending");
             const estimatedGasLimit: number = await this.liquidatorContract.methods
-                .liquidate(borrower, encodedAddress, 1)
+                .liquidate(borrower, encodedAddress, liquidationTxInfo.currentStrain)
                 .estimateGas({
                     gasLimit: Liquidator.GAS_LIMIT,
                 });
             const updatedGasLimit = Math.ceil(estimatedGasLimit * GAS_INCREASE_FACTOR);
-            const encodedData = this.liquidatorContract.methods.liquidate(borrower, encodedAddress, 1).encodeABI();
+            const encodedData = this.liquidatorContract.methods.liquidate(borrower, encodedAddress, liquidationTxInfo.currentStrain).encodeABI();
             const transactionConfig: TransactionConfig = {
                 from: WALLET_ADDRESS,
                 to: this.liquidatorContract.options.address,
-                gasPrice: liquidationTxInfo["gasPrice"],
+                gasPrice: liquidationTxInfo.gasPrice,
                 gas: updatedGasLimit,
                 nonce: currentNonce,
                 data: encodedData,
