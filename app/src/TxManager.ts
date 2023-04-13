@@ -9,7 +9,7 @@ import Liquidator from "./Liquidator";
 
 config();
 
-const MAX_RETRIES_ALLOWED: number = 10;
+const MAX_RETRIES_ALLOWED: number = 20;
 const GAS_INCREASE_FACTOR: number = 1.10;
 const MAX_ACCEPTABLE_ERRORS = 10;
 const WALLET_ADDRESS = process.env.WALLET_ADDRESS!;
@@ -61,7 +61,6 @@ export default class TXManager {
 
     public addLiquidatableAccount(address: string) {
         this.queue.push(address);
-        this.processLiquidatableCandidates();
     }
 
     private isLiquidationInProgress(borrower: string): boolean {
