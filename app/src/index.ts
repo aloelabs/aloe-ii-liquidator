@@ -22,10 +22,12 @@ const limiter = new Bottleneck({
   minTime: MS_BETWEEN_REQUESTS,
 });
 const LIQUIDATOR_ADDRESS = process.env.LIQUIDATOR_ADDRESS!;
-const liquidators: Liquidator[] = [
-  new Liquidator(OPTIMISM_ALCHEMY_URL, LIQUIDATOR_ADDRESS, limiter),
-  new Liquidator(ARBITRUM_ALCHEMY_URL, LIQUIDATOR_ADDRESS, limiter),
-];
+const liquidators: Liquidator[] = process.env.SIM === 'true'
+  ? [new Liquidator("ws://localhost:8545", LIQUIDATOR_ADDRESS, limiter)]
+  : [
+      new Liquidator(OPTIMISM_ALCHEMY_URL, LIQUIDATOR_ADDRESS, limiter),
+      new Liquidator(ARBITRUM_ALCHEMY_URL, LIQUIDATOR_ADDRESS, limiter),
+    ];
 
 app.get("/liquidator_liveness_check", (req, res) => {
   res.status(STATUS_OK).send({ status: "ok" });

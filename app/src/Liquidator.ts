@@ -10,7 +10,6 @@ import Bottleneck from "bottleneck";
 
 const FACTORY_ADDRESS: string = process.env.FACTORY_ADDRESS!;
 const CREATE_ACCOUNT_TOPIC_ID: string = process.env.CREATE_ACCOUNT_TOPIC_ID!;
-const WALLET_ADDRESS = process.env.WALLET_ADDRESS!;
 const ALOE_INITIAL_DEPLOY = 0;
 const POLLING_INTERVAL_MS = 150_000; // 2.5 minutes
 const CLIENT_KEEPALIVE_INTERVAL_MS = 60_000;
@@ -274,7 +273,7 @@ export default class Liquidator {
     ) {
       throw new Error(`Invalid strain: ${strain}`);
     }
-    const data = this.web3.eth.abi.encodeParameter("address", WALLET_ADDRESS);
+    const data = this.web3.eth.abi.encodeParameter("address", this.txManager.address());
     try {
       const estimatedGasLimit: number = await this.liquidatorContract.methods
         .liquidate(borrower, data, integerStrain)
