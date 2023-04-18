@@ -105,6 +105,7 @@ export default class TXManager {
             }
             if (liquidationTxInfo.retries > MAX_RETRIES_ALLOWED) {
                 log("debug", `Exceeded maximum amount of retries when attempting to liquidate borrower: ${borrower}`);
+                this.errorCount++;
                 continue;
             }
             const encodedAddress = this.client.eth.abi.encodeParameter("address", WALLET_ADDRESS);
