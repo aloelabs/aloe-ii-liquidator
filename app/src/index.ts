@@ -3,7 +3,7 @@ import SlackHook from "./SlackHook";
 import dotenv from "dotenv";
 import express from "express";
 import winston from "winston";
-import Liquidator from "./Liquidator";
+import Liquidator, { PROCESS_LIQUIDATABLE_INTERVAL_MS } from "./Liquidator";
 import Bottleneck from "bottleneck";
 
 dotenv.config();
@@ -81,9 +81,13 @@ winston.configure({
   exitOnError: false,
 });
 
-function start() {
+async function start() {
+  const delayBetweenStarts = PROCESS_LIQUIDATABLE_INTERVAL_MS / liquidators.length;
   for (const liquidator of liquidators) {
     liquidator.start();
+    // We want to stagger the start of each liquidator so that we can spread
+    // out their requests.
+    await new Promise((resolve) => setTimeout(resolve, delayBetweenStarts));
   }
 }
 

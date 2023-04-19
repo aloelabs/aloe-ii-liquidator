@@ -13,6 +13,7 @@ const CREATE_ACCOUNT_TOPIC_ID: string = process.env.CREATE_ACCOUNT_TOPIC_ID!;
 const WALLET_ADDRESS = process.env.WALLET_ADDRESS!;
 const ALOE_INITIAL_DEPLOY = 0;
 const POLLING_INTERVAL_MS = 150_000; // 2.5 minutes
+export const PROCESS_LIQUIDATABLE_INTERVAL_MS = 20_000; // 20 seconds
 const CLIENT_KEEPALIVE_INTERVAL_MS = 60_000;
 const RECONNECT_DELAY_MS = 5_000;
 const RECONNECT_MAX_ATTEMPTS = 5;
@@ -39,10 +40,11 @@ type EstimateGasLiquidationResult = {
 };
 
 export default class Liquidator {
-  public static readonly MAX_STRAIN = 10;
+  public static readonly MAX_STRAIN = 20;
   public static readonly MIN_STRAIN = 1;
   public static readonly GAS_LIMIT = 3_000_000;
   private pollingInterval: NodeJS.Timer | null;
+  private processLiquidatableInterval: NodeJS.Timer | null;
   private web3: Web3;
   private liquidatorContract: Contract;
   private txManager: TxManager;
@@ -63,6 +65,7 @@ export default class Liquidator {
     limiter: Bottleneck
   ) {
     this.pollingInterval = null;
+    this.processLiquidatableInterval = null;
     const provider = new Web3.providers.WebsocketProvider(jsonRpcURL, {
       clientConfig: {
         keepalive: true,
@@ -106,9 +109,14 @@ export default class Liquidator {
     this.collectBorrowers(ALOE_INITIAL_DEPLOY);
 
     this.pollingInterval = setInterval(() => {
-      console.log("Scanning borrowers...");
+      console.log(`#${this.uniqueId} Scanning borrowers on ${Liquidator.getChainName(chainId)}...`);
       this.scan(this.borrowers);
     }, POLLING_INTERVAL_MS);
+
+    this.processLiquidatableInterval = setInterval(() => {
+      console.log(`#${this.uniqueId} Processing liquidatable candidates on ${Liquidator.getChainName(chainId)}...`);
+      this.txManager.processLiquidatableCandidates();
+    }, PROCESS_LIQUIDATABLE_INTERVAL_MS);
   }
 
   /**
@@ -119,6 +127,9 @@ export default class Liquidator {
     winston.log("info", `🪫 Powering down liquidation bot #${this.uniqueId}`);
     if (this.pollingInterval) {
       clearInterval(this.pollingInterval);
+    }
+    if (this.processLiquidatableInterval) {
+      clearInterval(this.processLiquidatableInterval);
     }
     return new Promise((resolve, reject) => {
       this.web3.eth.clearSubscriptions((error: Error, result: boolean) => {
@@ -170,18 +181,18 @@ export default class Liquidator {
       if (!this.borrowers.includes(borrowerAddress)) {
         winston.log(
           "debug",
-          `Detected new borrower! Adding \`${borrowerAddress}\` to global list (${this.borrowers.length} total).`
+          `#${this.uniqueId} Detected new borrower! Adding \`${borrowerAddress}\` to global list (${this.borrowers.length} total).`
         );
         this.borrowers.push(borrowerAddress);
       } else {
         winston.log(
           "debug",
-          `Received duplicate creation event for borrower ${borrowerAddress}`
+          `#${this.uniqueId} Received duplicate creation event for borrower ${borrowerAddress}`
         );
       }
     } else {
       this.errorCount += 1;
-      winston.log("error", `Error when collecting borrowers: ${error}`);
+      winston.log("error", `#${this.uniqueId} Error when collecting borrowers: ${error}`);
     }
   }
 
@@ -229,7 +240,7 @@ export default class Liquidator {
     const shortName = borrower.slice(0, 8);
     winston.log(
       "debug",
-      `Checking solvency of ${shortName} via gas estimation...`
+      `#${this.uniqueId} Checking solvency of ${shortName} via gas estimation...`
     );
     const estimatedGasResult: EstimateGasLiquidationResult =
       await this.estimateGasForLiquidation(borrower, Liquidator.MAX_STRAIN);
@@ -238,7 +249,7 @@ export default class Liquidator {
     } else if (estimatedGasResult.error === LiquidationError.Healthy) {
       return true;
     } else if (estimatedGasResult.error === LiquidationError.Grace) {
-      winston.log("info", `⏳ ${shortName} is in grace period`);
+      winston.log("info", `#${this.uniqueId} ⏳ ${shortName} is in grace period`);
       return true;
     } else {
       // Checking the unleashLiquidationTime is a workaround for a none-critical bug.
@@ -251,12 +262,12 @@ export default class Liquidator {
       if (unleashLiquidationTime === "0") {
         winston.log(
           "error",
-          `🚨 Something unexpected happened. ${shortName} reverted with an unknown message and has an unleashLiquidationTime of 0. Error encountered: ${estimatedGasResult.errorMsg}.`
+          `#${this.uniqueId} 🚨 Something unexpected happened. ${shortName} reverted with an unknown message and has an unleashLiquidationTime of 0. Error encountered: ${estimatedGasResult.errorMsg}.`
         );
       } else {
         winston.log(
           "debug",
-          `🚨 ${shortName} is likely healthy, but has an unleashLiquidationTime of ${unleashLiquidationTime}. This is likely a result of the bug with repay/modify.`
+          `#${this.uniqueId} 🟠 ${shortName} is likely healthy, but has an unleashLiquidationTime of ${unleashLiquidationTime}. This is likely a result of the bug with repay/modify.`
         );
       }
       return true;
