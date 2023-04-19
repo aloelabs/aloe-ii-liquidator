@@ -267,7 +267,7 @@ export default class Liquidator {
       } else {
         winston.log(
           "debug",
-          `#${this.uniqueId} 🚨 ${shortName} is likely healthy, but has an unleashLiquidationTime of ${unleashLiquidationTime}. This is likely a result of the bug with repay/modify.`
+          `#${this.uniqueId} 🟠 ${shortName} is likely healthy, but has an unleashLiquidationTime of ${unleashLiquidationTime}. This is likely a result of the bug with repay/modify.`
         );
       }
       return true;
