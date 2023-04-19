@@ -18,6 +18,7 @@
     "clean": "rm -rf lib"
   },
   "dependencies": {
+    "@sentry/node": "^7.48.0",
     "@types/big.js": "^6.1.2",
     "axios": "^0.25.0",
     "big.js": "^6.1.1",

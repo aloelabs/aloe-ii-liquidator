@@ -7,6 +7,7 @@ import MarginAccountABIJson from "./abis/MarginAccount.json";
 import TxManager from "./TxManager";
 import winston from "winston";
 import Bottleneck from "bottleneck";
+import * as Sentry from "@sentry/node";
 
 const FACTORY_ADDRESS: string = process.env.FACTORY_ADDRESS!;
 const CREATE_ACCOUNT_TOPIC_ID: string = process.env.CREATE_ACCOUNT_TOPIC_ID!;
@@ -261,14 +262,38 @@ export default class Liquidator {
       const unleashLiquidationTime = slot0.unleashLiquidationTime;
       if (unleashLiquidationTime === "0") {
         winston.log(
-          "error",
+          "debug",
           `#${this.uniqueId} 🚨 Something unexpected happened. ${shortName} reverted with an unknown message and has an unleashLiquidationTime of 0. Error encountered: ${estimatedGasResult.errorMsg}.`
         );
+        Sentry.withScope((scope) => {
+          scope.setContext("info", {
+            borrower: borrower,
+            estimatedGasResult: estimatedGasResult,
+            unleashLiquidationTime: unleashLiquidationTime,
+
+          });
+          Sentry.captureMessage(
+            `#${this.uniqueId} 🚨 Something unexpected happened. ${shortName} reverted with an unknown message and has an unleashLiquidationTime of 0. Error encountered: ${estimatedGasResult.errorMsg}.`,
+            "error"
+          );
+        });
       } else {
         winston.log(
           "debug",
           `#${this.uniqueId} 🟠 ${shortName} is likely healthy, but has an unleashLiquidationTime of ${unleashLiquidationTime}. This is likely a result of the bug with repay/modify.`
         );
+        Sentry.withScope((scope) => {
+          scope.setContext("info", {
+            borrower: borrower,
+            estimatedGasResult: estimatedGasResult,
+            unleashLiquidationTime: unleashLiquidationTime,
+
+          });
+          Sentry.captureMessage(
+            `#${this.uniqueId} 🟠 ${shortName} is likely healthy, but has an unleashLiquidationTime of ${unleashLiquidationTime}. This is likely a result of the bug with repay/modify.`,
+            "warning"
+          );
+        });
       }
       return true;
     }

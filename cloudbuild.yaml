@@ -13,6 +13,9 @@ steps:
     - 'SLACK_WEBHOOK0=${_SLACK_WEBHOOK0}'
     - 'SLACK_WEBHOOK1=${_SLACK_WEBHOOK1}'
     - 'SLACK_WEBHOOK2=${_SLACK_WEBHOOK2}'
+    - 'SENTRY_DSN0=${_SENTRY_DSN0}'
+    - 'SENTRY_DSN1=${_SENTRY_DSN1}'
+    - 'SENTRY_DSN2=${_SENTRY_DSN2}'
 - name: 'gcr.io/cloud-builders/gcloud'
   dir: 'app'
   args: ['app', 'deploy', '.']
