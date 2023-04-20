@@ -37,9 +37,16 @@ enum LiquidationError {
   Unknown = "unknown",
 }
 
+type LiquidateArgs = {
+  borrower: string;
+  data: string;
+  strain: number;
+};
+
 type EstimateGasLiquidationResult = {
   success: boolean;
   estimatedGas: number;
+  args: LiquidateArgs;
   error?: LiquidationError;
   errorMsg?: string;
 };
@@ -270,16 +277,16 @@ export default class Liquidator {
       const slot0 = await borrowerContract.methods.slot0().call();
       const unleashLiquidationTime = slot0.unleashLiquidationTime;
       if (unleashLiquidationTime === "0") {
+        const blockNumber = await this.web3.eth.getBlockNumber();
         winston.log(
           "debug",
           `#${this.uniqueId} 🚨 Something unexpected happened. ${shortName} reverted with an unknown message and has an unleashLiquidationTime of 0. Error encountered: ${estimatedGasResult.errorMsg}.`
         );
         Sentry.withScope((scope) => {
           scope.setContext("info", {
-            borrower: borrower,
-            estimatedGasResult: estimatedGasResult,
-            unleashLiquidationTime: unleashLiquidationTime,
-
+            args: estimatedGasResult.args,
+            blockNumber: blockNumber,
+            liquidatorContractAddress: this.liquidatorContract.options.address,
           });
           Sentry.captureMessage(
             `#${this.uniqueId} 🚨 Something unexpected happened. ${shortName} reverted with an unknown message and has an unleashLiquidationTime of 0. Error encountered: ${estimatedGasResult.errorMsg}.`,
@@ -293,10 +300,7 @@ export default class Liquidator {
         );
         Sentry.withScope((scope) => {
           scope.setContext("info", {
-            borrower: borrower,
-            estimatedGasResult: estimatedGasResult,
-            unleashLiquidationTime: unleashLiquidationTime,
-
+            args: estimatedGasResult.args,
           });
           Sentry.captureMessage(
             `#${this.uniqueId} 🟠 ${shortName} is likely healthy, but has an unleashLiquidationTime of ${unleashLiquidationTime}. This is likely a result of the bug with repay/modify.`,
@@ -319,16 +323,21 @@ export default class Liquidator {
     ) {
       throw new Error(`Invalid strain: ${strain}`);
     }
-    const data = this.web3.eth.abi.encodeParameter("address", WALLET_ADDRESS);
+    const encodedAddress = this.web3.eth.abi.encodeParameter("address", WALLET_ADDRESS);
     try {
       const estimatedGasLimit: number = await this.liquidatorContract.methods
-        .liquidate(borrower, data, integerStrain)
+        .liquidate(borrower, encodedAddress, integerStrain)
         .estimateGas({
           gasLimit: Liquidator.GAS_LIMIT,
         });
       return {
         success: true,
         estimatedGas: estimatedGasLimit,
+        args: {
+          borrower,
+          data: encodedAddress,
+          strain: integerStrain,
+        }
       };
     } catch (e) {
       const errorMsg = (e as Error).message;
@@ -341,6 +350,11 @@ export default class Liquidator {
       return {
         success: false,
         estimatedGas: 0,
+        args: {
+          borrower,
+          data: encodedAddress,
+          strain: integerStrain,
+        },
         error: errorType,
         errorMsg,
       };
