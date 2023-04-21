@@ -28,8 +28,11 @@ const liquidators: Liquidator[] = [
 
 Sentry.init({
   dsn: `https://${process.env.SENTRY_DSN0}@${process.env.SENTRY_DSN1}.ingest.sentry.io/${process.env.SENTRY_DSN2}`,
-  sampleRate: 0.1,
-  enabled: process.env.SENTRY_DSN0 !== undefined && process.env.SENTRY_DSN1 !== undefined && process.env.SENTRY_DSN2 !== undefined,
+  sampleRate: 0.2,
+  enabled:
+    process.env.SENTRY_DSN0 !== undefined &&
+    process.env.SENTRY_DSN1 !== undefined &&
+    process.env.SENTRY_DSN2 !== undefined,
   autoSessionTracking: false,
 });
 

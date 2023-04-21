@@ -1,4 +1,5 @@
 import Web3 from "web3";
+import { WebsocketProvider } from "web3-providers-ws";
 import { Log } from "web3-core";
 import { Contract } from "web3-eth-contract";
 import { AbiItem } from "web3-utils";
@@ -8,6 +9,7 @@ import TxManager from "./TxManager";
 import winston from "winston";
 import Bottleneck from "bottleneck";
 import * as Sentry from "@sentry/node";
+import { withTimeout } from "./Utils";
 
 const FACTORY_ADDRESS: string = process.env.FACTORY_ADDRESS!;
 const CREATE_ACCOUNT_TOPIC_ID: string = process.env.CREATE_ACCOUNT_TOPIC_ID!;
@@ -15,6 +17,8 @@ const WALLET_ADDRESS = process.env.WALLET_ADDRESS!;
 const ALOE_INITIAL_DEPLOY = 0;
 const POLLING_INTERVAL_MS = 150_000; // 2.5 minutes
 export const PROCESS_LIQUIDATABLE_INTERVAL_MS = 20_000; // 20 seconds
+const HEARTBEAT_INTERVAL_MS = 15_000; // 15 seconds
+const HEARTBEAT_TIMEOUT_MS = 10_000; // 10 seconds
 const CLIENT_KEEPALIVE_INTERVAL_MS = 60_000;
 const RECONNECT_DELAY_MS = 5_000;
 const RECONNECT_MAX_ATTEMPTS = 5;
@@ -33,9 +37,16 @@ enum LiquidationError {
   Unknown = "unknown",
 }
 
+type LiquidateArgs = {
+  borrower: string;
+  data: string;
+  strain: number;
+};
+
 type EstimateGasLiquidationResult = {
   success: boolean;
   estimatedGas: number;
+  args: LiquidateArgs;
   error?: LiquidationError;
   errorMsg?: string;
 };
@@ -46,6 +57,8 @@ export default class Liquidator {
   public static readonly GAS_LIMIT = 3_000_000;
   private pollingInterval: NodeJS.Timer | null;
   private processLiquidatableInterval: NodeJS.Timer | null;
+  private heartbeatInterval: NodeJS.Timer | null;
+  private provider: WebsocketProvider;
   private web3: Web3;
   private liquidatorContract: Contract;
   private txManager: TxManager;
@@ -67,7 +80,8 @@ export default class Liquidator {
   ) {
     this.pollingInterval = null;
     this.processLiquidatableInterval = null;
-    const provider = new Web3.providers.WebsocketProvider(jsonRpcURL, {
+    this.heartbeatInterval = null;
+    const wsProvider = new Web3.providers.WebsocketProvider(jsonRpcURL, {
       clientConfig: {
         keepalive: true,
         keepaliveInterval: CLIENT_KEEPALIVE_INTERVAL_MS,
@@ -79,7 +93,8 @@ export default class Liquidator {
         onTimeout: false,
       },
     });
-    this.web3 = new Web3(provider);
+    this.provider = wsProvider;
+    this.web3 = new Web3(wsProvider);
     this.web3.eth.handleRevert = true;
     this.liquidatorContract = new this.web3.eth.Contract(
       LiquidatorABIJson as AbiItem[],
@@ -108,6 +123,7 @@ export default class Liquidator {
     this.txManager.init(chainId);
 
     this.collectBorrowers(ALOE_INITIAL_DEPLOY);
+    this.startHeartbeat();
 
     this.pollingInterval = setInterval(() => {
       console.log(`#${this.uniqueId} Scanning borrowers on ${Liquidator.getChainName(chainId)}...`);
@@ -261,16 +277,16 @@ export default class Liquidator {
       const slot0 = await borrowerContract.methods.slot0().call();
       const unleashLiquidationTime = slot0.unleashLiquidationTime;
       if (unleashLiquidationTime === "0") {
+        const blockNumber = await this.web3.eth.getBlockNumber();
         winston.log(
           "debug",
           `#${this.uniqueId} 🚨 Something unexpected happened. ${shortName} reverted with an unknown message and has an unleashLiquidationTime of 0. Error encountered: ${estimatedGasResult.errorMsg}.`
         );
         Sentry.withScope((scope) => {
           scope.setContext("info", {
-            borrower: borrower,
-            estimatedGasResult: estimatedGasResult,
-            unleashLiquidationTime: unleashLiquidationTime,
-
+            args: estimatedGasResult.args,
+            blockNumber: blockNumber,
+            liquidatorContractAddress: this.liquidatorContract.options.address,
           });
           Sentry.captureMessage(
             `#${this.uniqueId} 🚨 Something unexpected happened. ${shortName} reverted with an unknown message and has an unleashLiquidationTime of 0. Error encountered: ${estimatedGasResult.errorMsg}.`,
@@ -284,10 +300,7 @@ export default class Liquidator {
         );
         Sentry.withScope((scope) => {
           scope.setContext("info", {
-            borrower: borrower,
-            estimatedGasResult: estimatedGasResult,
-            unleashLiquidationTime: unleashLiquidationTime,
-
+            args: estimatedGasResult.args,
           });
           Sentry.captureMessage(
             `#${this.uniqueId} 🟠 ${shortName} is likely healthy, but has an unleashLiquidationTime of ${unleashLiquidationTime}. This is likely a result of the bug with repay/modify.`,
@@ -310,16 +323,21 @@ export default class Liquidator {
     ) {
       throw new Error(`Invalid strain: ${strain}`);
     }
-    const data = this.web3.eth.abi.encodeParameter("address", WALLET_ADDRESS);
+    const encodedAddress = this.web3.eth.abi.encodeParameter("address", WALLET_ADDRESS);
     try {
       const estimatedGasLimit: number = await this.liquidatorContract.methods
-        .liquidate(borrower, data, integerStrain)
+        .liquidate(borrower, encodedAddress, integerStrain)
         .estimateGas({
           gasLimit: Liquidator.GAS_LIMIT,
         });
       return {
         success: true,
         estimatedGas: estimatedGasLimit,
+        args: {
+          borrower,
+          data: encodedAddress,
+          strain: integerStrain,
+        }
       };
     } catch (e) {
       const errorMsg = (e as Error).message;
@@ -332,10 +350,36 @@ export default class Liquidator {
       return {
         success: false,
         estimatedGas: 0,
+        args: {
+          borrower,
+          data: encodedAddress,
+          strain: integerStrain,
+        },
         error: errorType,
         errorMsg,
       };
     }
+  }
+
+  /**
+   * Starts the heartbeat interval.
+   * This is used to check if the provider is still connected.
+   * If the heartbeat fails, the provider will be reconnected.
+   */
+  private startHeartbeat(): void {
+    if (this.heartbeatInterval) {
+      winston.debug(`#${this.uniqueId} Heartbeat already started`);
+      return;
+    }
+    this.heartbeatInterval = setInterval(async () => {
+      try {
+        winston.debug(`#${this.uniqueId} ♥️ Heartbeat`);
+        await withTimeout(this.web3.eth.getChainId(), HEARTBEAT_TIMEOUT_MS);
+      } catch (e) {
+        Sentry.captureException(e);
+        this.provider.reconnect();
+      }
+    }, HEARTBEAT_INTERVAL_MS);
   }
 
   /**
