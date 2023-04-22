@@ -322,6 +322,16 @@ export default class Liquidator {
         estimatedGas: estimatedGasLimit,
       };
     } catch (e) {
+      const blockNumber = await this.web3.eth.getBlockNumber();
+      Sentry.captureException(e, scope => {
+        scope.setContext('parameters', {
+          'data': data,
+          'borrower': borrower,
+          'integerStrain': integerStrain,
+          'blockNumber': blockNumber,
+        })
+        return scope;
+      })
       const errorMsg = (e as Error).message;
       let errorType: LiquidationError = LiquidationError.Unknown;
       if (errorMsg.includes(LiquidationError.Healthy)) {
