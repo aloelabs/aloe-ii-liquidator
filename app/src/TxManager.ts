@@ -9,7 +9,7 @@ import Liquidator from "./Liquidator";
 
 config();
 
-const MAX_RETRIES_ALLOWED: number = 10;
+const MAX_RETRIES_ALLOWED: number = 20;
 const GAS_INCREASE_FACTOR: number = 1.10;
 const MAX_ACCEPTABLE_ERRORS = 10;
 
@@ -64,7 +64,6 @@ export default class TXManager {
 
     public addLiquidatableAccount(address: string) {
         this.queue.push(address);
-        this.processLiquidatableCandidates();
     }
 
     private isLiquidationInProgress(borrower: string): boolean {
@@ -109,6 +108,7 @@ export default class TXManager {
             }
             if (liquidationTxInfo.retries > MAX_RETRIES_ALLOWED) {
                 log("debug", `Exceeded maximum amount of retries when attempting to liquidate borrower: ${borrower}`);
+                this.errorCount++;
                 continue;
             }
             const encodedAddress = this.client.eth.abi.encodeParameter("address", this.account.address);

@@ -1,4 +1,5 @@
 import Web3 from "web3";
+import { WebsocketProvider } from "web3-providers-ws";
 import { Log } from "web3-core";
 import { Contract } from "web3-eth-contract";
 import { AbiItem } from "web3-utils";
@@ -7,11 +8,17 @@ import MarginAccountABIJson from "./abis/MarginAccount.json";
 import TxManager from "./TxManager";
 import winston from "winston";
 import Bottleneck from "bottleneck";
+import * as Sentry from "@sentry/node";
+import { withTimeout } from "./Utils";
 
 const FACTORY_ADDRESS: string = process.env.FACTORY_ADDRESS!;
 const CREATE_ACCOUNT_TOPIC_ID: string = process.env.CREATE_ACCOUNT_TOPIC_ID!;
+const WALLET_ADDRESS = process.env.WALLET_ADDRESS!;
 const ALOE_INITIAL_DEPLOY = 0;
 const POLLING_INTERVAL_MS = 150_000; // 2.5 minutes
+export const PROCESS_LIQUIDATABLE_INTERVAL_MS = 20_000; // 20 seconds
+const HEARTBEAT_INTERVAL_MS = 15_000; // 15 seconds
+const HEARTBEAT_TIMEOUT_MS = 10_000; // 10 seconds
 const CLIENT_KEEPALIVE_INTERVAL_MS = 60_000;
 const RECONNECT_DELAY_MS = 5_000;
 const RECONNECT_MAX_ATTEMPTS = 5;
@@ -30,18 +37,28 @@ enum LiquidationError {
   Unknown = "unknown",
 }
 
+type LiquidateArgs = {
+  borrower: string;
+  data: string;
+  strain: number;
+};
+
 type EstimateGasLiquidationResult = {
   success: boolean;
   estimatedGas: number;
+  args: LiquidateArgs;
   error?: LiquidationError;
   errorMsg?: string;
 };
 
 export default class Liquidator {
-  public static readonly MAX_STRAIN = 10;
+  public static readonly MAX_STRAIN = 20;
   public static readonly MIN_STRAIN = 1;
   public static readonly GAS_LIMIT = 3_000_000;
   private pollingInterval: NodeJS.Timer | null;
+  private processLiquidatableInterval: NodeJS.Timer | null;
+  private heartbeatInterval: NodeJS.Timer | null;
+  private provider: WebsocketProvider;
   private web3: Web3;
   private liquidatorContract: Contract;
   private txManager: TxManager;
@@ -62,7 +79,9 @@ export default class Liquidator {
     limiter: Bottleneck
   ) {
     this.pollingInterval = null;
-    const provider = new Web3.providers.WebsocketProvider(jsonRpcURL, {
+    this.processLiquidatableInterval = null;
+    this.heartbeatInterval = null;
+    const wsProvider = new Web3.providers.WebsocketProvider(jsonRpcURL, {
       clientConfig: {
         keepalive: true,
         keepaliveInterval: CLIENT_KEEPALIVE_INTERVAL_MS,
@@ -74,7 +93,8 @@ export default class Liquidator {
         onTimeout: false,
       },
     });
-    this.web3 = new Web3(provider);
+    this.provider = wsProvider;
+    this.web3 = new Web3(wsProvider);
     this.web3.eth.handleRevert = true;
     this.liquidatorContract = new this.web3.eth.Contract(
       LiquidatorABIJson as AbiItem[],
@@ -103,11 +123,17 @@ export default class Liquidator {
     this.txManager.init(chainId);
 
     this.collectBorrowers(ALOE_INITIAL_DEPLOY);
+    this.startHeartbeat();
 
     this.pollingInterval = setInterval(() => {
-      console.log("Scanning borrowers...");
+      console.log(`#${this.uniqueId} Scanning borrowers on ${Liquidator.getChainName(chainId)}...`);
       this.scan(this.borrowers);
     }, POLLING_INTERVAL_MS);
+
+    this.processLiquidatableInterval = setInterval(() => {
+      console.log(`#${this.uniqueId} Processing liquidatable candidates on ${Liquidator.getChainName(chainId)}...`);
+      this.txManager.processLiquidatableCandidates();
+    }, PROCESS_LIQUIDATABLE_INTERVAL_MS);
   }
 
   /**
@@ -118,6 +144,9 @@ export default class Liquidator {
     winston.log("info", `🪫 Powering down liquidation bot #${this.uniqueId}`);
     if (this.pollingInterval) {
       clearInterval(this.pollingInterval);
+    }
+    if (this.processLiquidatableInterval) {
+      clearInterval(this.processLiquidatableInterval);
     }
     return new Promise((resolve, reject) => {
       this.web3.eth.clearSubscriptions((error: Error, result: boolean) => {
@@ -169,18 +198,18 @@ export default class Liquidator {
       if (!this.borrowers.includes(borrowerAddress)) {
         winston.log(
           "debug",
-          `Detected new borrower! Adding \`${borrowerAddress}\` to global list (${this.borrowers.length} total).`
+          `#${this.uniqueId} Detected new borrower! Adding \`${borrowerAddress}\` to global list (${this.borrowers.length} total).`
         );
         this.borrowers.push(borrowerAddress);
       } else {
         winston.log(
           "debug",
-          `Received duplicate creation event for borrower ${borrowerAddress}`
+          `#${this.uniqueId} Received duplicate creation event for borrower ${borrowerAddress}`
         );
       }
     } else {
       this.errorCount += 1;
-      winston.log("error", `Error when collecting borrowers: ${error}`);
+      winston.log("error", `#${this.uniqueId} Error when collecting borrowers: ${error}`);
     }
   }
 
@@ -228,7 +257,7 @@ export default class Liquidator {
     const shortName = borrower.slice(0, 8);
     winston.log(
       "debug",
-      `Checking solvency of ${shortName} via gas estimation...`
+      `#${this.uniqueId} Checking solvency of ${shortName} via gas estimation...`
     );
     const estimatedGasResult: EstimateGasLiquidationResult =
       await this.estimateGasForLiquidation(borrower, Liquidator.MAX_STRAIN);
@@ -237,7 +266,7 @@ export default class Liquidator {
     } else if (estimatedGasResult.error === LiquidationError.Healthy) {
       return true;
     } else if (estimatedGasResult.error === LiquidationError.Grace) {
-      winston.log("info", `⏳ ${shortName} is in grace period`);
+      winston.log("info", `#${this.uniqueId} ⏳ ${shortName} is in grace period`);
       return true;
     } else {
       // Checking the unleashLiquidationTime is a workaround for a none-critical bug.
@@ -248,15 +277,36 @@ export default class Liquidator {
       const slot0 = await borrowerContract.methods.slot0().call();
       const unleashLiquidationTime = slot0.unleashLiquidationTime;
       if (unleashLiquidationTime === "0") {
+        const blockNumber = await this.web3.eth.getBlockNumber();
         winston.log(
-          "error",
-          `🚨 Something unexpected happened. ${shortName} reverted with an unknown message and has an unleashLiquidationTime of 0. Error encountered: ${estimatedGasResult.errorMsg}.`
+          "debug",
+          `#${this.uniqueId} 🚨 Something unexpected happened. ${shortName} reverted with an unknown message and has an unleashLiquidationTime of 0. Error encountered: ${estimatedGasResult.errorMsg}.`
         );
+        Sentry.withScope((scope) => {
+          scope.setContext("info", {
+            args: estimatedGasResult.args,
+            blockNumber: blockNumber,
+            liquidatorContractAddress: this.liquidatorContract.options.address,
+          });
+          Sentry.captureMessage(
+            `#${this.uniqueId} 🚨 Something unexpected happened. ${shortName} reverted with an unknown message and has an unleashLiquidationTime of 0. Error encountered: ${estimatedGasResult.errorMsg}.`,
+            "error"
+          );
+        });
       } else {
         winston.log(
           "debug",
-          `🚨 ${shortName} is likely healthy, but has an unleashLiquidationTime of ${unleashLiquidationTime}. This is likely a result of the bug with repay/modify.`
+          `#${this.uniqueId} 🟠 ${shortName} is likely healthy, but has an unleashLiquidationTime of ${unleashLiquidationTime}. This is likely a result of the bug with repay/modify.`
         );
+        Sentry.withScope((scope) => {
+          scope.setContext("info", {
+            args: estimatedGasResult.args,
+          });
+          Sentry.captureMessage(
+            `#${this.uniqueId} 🟠 ${shortName} is likely healthy, but has an unleashLiquidationTime of ${unleashLiquidationTime}. This is likely a result of the bug with repay/modify.`,
+            "warning"
+          );
+        });
       }
       return true;
     }
@@ -273,16 +323,21 @@ export default class Liquidator {
     ) {
       throw new Error(`Invalid strain: ${strain}`);
     }
-    const data = this.web3.eth.abi.encodeParameter("address", this.txManager.address());
+    const encodedAddress = this.web3.eth.abi.encodeParameter("address", WALLET_ADDRESS);
     try {
       const estimatedGasLimit: number = await this.liquidatorContract.methods
-        .liquidate(borrower, data, integerStrain)
+        .liquidate(borrower, encodedAddress, integerStrain)
         .estimateGas({
           gasLimit: Liquidator.GAS_LIMIT,
         });
       return {
         success: true,
         estimatedGas: estimatedGasLimit,
+        args: {
+          borrower,
+          data: encodedAddress,
+          strain: integerStrain,
+        }
       };
     } catch (e) {
       const errorMsg = (e as Error).message;
@@ -295,10 +350,36 @@ export default class Liquidator {
       return {
         success: false,
         estimatedGas: 0,
+        args: {
+          borrower,
+          data: encodedAddress,
+          strain: integerStrain,
+        },
         error: errorType,
         errorMsg,
       };
     }
+  }
+
+  /**
+   * Starts the heartbeat interval.
+   * This is used to check if the provider is still connected.
+   * If the heartbeat fails, the provider will be reconnected.
+   */
+  private startHeartbeat(): void {
+    if (this.heartbeatInterval) {
+      winston.debug(`#${this.uniqueId} Heartbeat already started`);
+      return;
+    }
+    this.heartbeatInterval = setInterval(async () => {
+      try {
+        winston.debug(`#${this.uniqueId} ♥️ Heartbeat`);
+        await withTimeout(this.web3.eth.getChainId(), HEARTBEAT_TIMEOUT_MS);
+      } catch (e) {
+        Sentry.captureException(e);
+        this.provider.reconnect();
+      }
+    }, HEARTBEAT_INTERVAL_MS);
   }
 
   /**

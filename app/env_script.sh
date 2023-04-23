@@ -10,5 +10,8 @@ sed -i 's/%LIQUIDATOR_ADDRESS%/'$LIQUIDATOR_ADDRESS'/g' app.yaml
 sed -i 's/%SLACK_WEBHOOK0%/'$SLACK_WEBHOOK0'/g' app.yaml
 sed -i 's/%SLACK_WEBHOOK1%/'$SLACK_WEBHOOK1'/g' app.yaml
 sed -i 's/%SLACK_WEBHOOK2%/'$SLACK_WEBHOOK2'/g' app.yaml
+sed -i 's/%SENTRY_DSN0%/'$SENTRY_DSN0'/g' app.yaml
+sed -i 's/%SENTRY_DSN1%/'$SENTRY_DSN1'/g' app.yaml
+sed -i 's/%SENTRY_DSN2%/'$SENTRY_DSN2'/g' app.yaml
 
 cat app.yaml
