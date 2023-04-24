@@ -280,6 +280,14 @@ export default class Liquidator {
         .estimateGas({
           gasLimit: Liquidator.GAS_LIMIT,
         });
+      if (process.env.SIM && estimatedGasLimit < 23000) {
+        return {
+          success: false,
+          estimatedGas: estimatedGasLimit,
+          error: LiquidationError.Unknown,
+          errorMsg: "Anvil doesn't bubble-up reverts when estimating gas, so we have no clue what's happening"
+        }
+      }
       return {
         success: true,
         estimatedGas: estimatedGasLimit,

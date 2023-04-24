@@ -12,14 +12,14 @@ import {
 const alchemy_key = process.env.ALCHEMY_API_KEY;
 const anvil = startAnvil({
   forkUrl: `https://opt-mainnet.g.alchemy.com/v2/${alchemy_key}`,
-  forkBlockNumber: Number(process.argv[2]), // e.g. 79537361
+  forkBlockNumber: Number(process.argv[2]), // e.g. 92975261
   blockTime: 5,
   baseFee: 1,
 });
 
 nextStdoutMsg(anvil).then(async () => {
   // `await` this to make sure things are good to go
-  const web3 = await web3WithWebsocketProvider("ws://localhost:8545");
+  const web3 = await web3WithWebsocketProvider("ws://127.0.0.1:8545");
 
   // NOTE: We can do all the usual things with this `web3` instance, e.g.:
   /*

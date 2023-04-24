@@ -98,7 +98,7 @@ export function startAnvil(
 
 export async function web3WithWebsocketProvider(
   url: string,
-  connectionAttempts = 5
+  connectionAttempts = 10
 ) {
   for (let i = 0; i < connectionAttempts; i += 1) {
     try {
@@ -109,7 +109,7 @@ export async function web3WithWebsocketProvider(
       return web3;
     } catch (e) {
       console.error(e);
-      await sleep(100);
+      await sleep(1000);
     }
   }
   throw new Error(

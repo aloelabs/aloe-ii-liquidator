@@ -23,7 +23,7 @@ const limiter = new Bottleneck({
 });
 const LIQUIDATOR_ADDRESS = process.env.LIQUIDATOR_ADDRESS!;
 const liquidators: Liquidator[] = process.env.SIM === 'true'
-  ? [new Liquidator("ws://localhost:8545", LIQUIDATOR_ADDRESS, limiter)]
+  ? [new Liquidator("ws://127.0.0.1:8545", LIQUIDATOR_ADDRESS, limiter)]
   : [
       new Liquidator(OPTIMISM_ALCHEMY_URL, LIQUIDATOR_ADDRESS, limiter),
       new Liquidator(ARBITRUM_ALCHEMY_URL, LIQUIDATOR_ADDRESS, limiter),
