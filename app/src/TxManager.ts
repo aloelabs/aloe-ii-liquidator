@@ -12,7 +12,6 @@ config();
 const MAX_RETRIES_ALLOWED: number = 20;
 const GAS_INCREASE_FACTOR: number = 1.10;
 const MAX_ACCEPTABLE_ERRORS = 10;
-const WALLET_ADDRESS = process.env.WALLET_ADDRESS!;
 
 type LiquidationTxInfo = {
     borrower: string;
@@ -57,6 +56,10 @@ export default class TXManager {
         this.account = account;
         this.baseEtherscanURL = Liquidator.getBaseEtherscanUrl(chainId);
         this.gasPriceMaximum = TXManager.getMaxGasPriceForChain(chainId);
+    }
+
+    public address() {
+        return this.account?.address;
     }
 
     public addLiquidatableAccount(address: string) {
@@ -108,8 +111,8 @@ export default class TXManager {
                 this.errorCount++;
                 continue;
             }
-            const encodedAddress = this.client.eth.abi.encodeParameter("address", WALLET_ADDRESS);
-            const currentNonce = await this.client.eth.getTransactionCount(WALLET_ADDRESS, "pending");
+            const encodedAddress = this.client.eth.abi.encodeParameter("address", this.account.address);
+            const currentNonce = await this.client.eth.getTransactionCount(this.account.address, "pending");
             const estimatedGasLimit: number = await this.liquidatorContract.methods
                 .liquidate(borrower, encodedAddress, liquidationTxInfo.currentStrain)
                 .estimateGas({
@@ -118,7 +121,7 @@ export default class TXManager {
             const updatedGasLimit = Math.ceil(estimatedGasLimit * GAS_INCREASE_FACTOR);
             const encodedData = this.liquidatorContract.methods.liquidate(borrower, encodedAddress, liquidationTxInfo.currentStrain).encodeABI();
             const transactionConfig: TransactionConfig = {
-                from: WALLET_ADDRESS,
+                from: this.account.address,
                 to: this.liquidatorContract.options.address,
                 gasPrice: liquidationTxInfo.gasPrice,
                 gas: updatedGasLimit,
