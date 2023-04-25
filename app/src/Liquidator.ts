@@ -398,9 +398,8 @@ export default class Liquidator {
       randomIndex = Math.floor(Math.random() * currentIndex);
       currentIndex -= 1;
 
-      temporaryValue = this.borrowers[currentIndex];
-      this.borrowers[currentIndex] = this.borrowers[randomIndex];
-      this.borrowers[randomIndex] = temporaryValue;
+      [this.borrowers[currentIndex], this.borrowers[randomIndex]] = 
+      [this.borrowers[randomIndex], this.borrowers[currentIndex]];
     }
   }
 
