@@ -127,7 +127,7 @@ export default class Liquidator {
 
     this.pollingInterval = setInterval(() => {
       console.log(`#${this.uniqueId} Scanning borrowers on ${Liquidator.getChainName(chainId)}...`);
-      this.scan(this.borrowers);
+      this.scanBorrowers();
     }, POLLING_INTERVAL_MS);
 
     this.processLiquidatableInterval = setInterval(() => {
@@ -233,8 +233,8 @@ export default class Liquidator {
    * Scans the borrowers and sends them to the transaction manager for liquidation (if they're insolvent).
    * @param borrowers The borrowers to scan.
    */
-  private scan(borrowers: string[]): void {
-    borrowers.forEach((borrower) => {
+  private scanBorrowers(): void {
+    for (const borrower of this.borrowers) {
       this.limiter.schedule(async () => {
         const solvent: boolean = await this.isSolvent(borrower);
         console.log("Is solvent?", solvent, borrower);
@@ -249,6 +249,13 @@ export default class Liquidator {
           console.log("Adding borrower to liquidation queue...", borrower);
           this.txManager.addLiquidatableAccount(borrower);
         }
+      });
+    }
+    // Shuffle the borrowers after each scan to randomize the order.
+    this.limiter.schedule(() => {
+      return new Promise<void>((resolve) => {
+        this.shuffleBorrowers();
+        resolve();
       });
     });
   }
@@ -380,6 +387,18 @@ export default class Liquidator {
         this.provider.reconnect();
       }
     }, HEARTBEAT_INTERVAL_MS);
+  }
+
+  private shuffleBorrowers(): void {
+    let currentIndex = this.borrowers.length;
+    let randomIndex: number;
+
+    while (currentIndex !== 0) {
+      randomIndex = Math.floor(Math.random() * currentIndex);
+      currentIndex -= 1;
+
+      [this.borrowers[currentIndex], this.borrowers[randomIndex]] = [this.borrowers[randomIndex], this.borrowers[currentIndex]];
+    }
   }
 
   /**
