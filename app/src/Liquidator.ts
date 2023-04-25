@@ -391,15 +391,13 @@ export default class Liquidator {
 
   private shuffleBorrowers(): void {
     let currentIndex = this.borrowers.length;
-    let temporaryValue: string;
     let randomIndex: number;
 
     while (currentIndex !== 0) {
       randomIndex = Math.floor(Math.random() * currentIndex);
       currentIndex -= 1;
 
-      [this.borrowers[currentIndex], this.borrowers[randomIndex]] = 
-      [this.borrowers[randomIndex], this.borrowers[currentIndex]];
+      [this.borrowers[currentIndex], this.borrowers[randomIndex]] = [this.borrowers[randomIndex], this.borrowers[currentIndex]];
     }
   }
 
