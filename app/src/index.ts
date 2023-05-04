@@ -34,6 +34,7 @@ Sentry.init({
     process.env.SENTRY_DSN1 !== undefined &&
     process.env.SENTRY_DSN2 !== undefined,
   autoSessionTracking: false,
+  release: process.env.GIT_COMMIT_SHA || undefined,
 });
 
 app.get("/liquidator_liveness_check", (req, res) => {

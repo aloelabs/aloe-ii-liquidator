@@ -16,6 +16,7 @@ steps:
     - 'SENTRY_DSN0=${_SENTRY_DSN0}'
     - 'SENTRY_DSN1=${_SENTRY_DSN1}'
     - 'SENTRY_DSN2=${_SENTRY_DSN2}'
+    - 'GIT_COMMIT_SHA=$COMMIT_SHA'
 - name: 'gcr.io/cloud-builders/gcloud'
   dir: 'app'
   args: ['app', 'deploy', '.']
