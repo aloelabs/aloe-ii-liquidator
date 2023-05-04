@@ -14,9 +14,13 @@ jobs:
         with:
           node-version: 16
       - name: Install dependencies
-        run: yarn install
+        run: |
+          cd app
+          yarn install
       - name: Build
-        run: yarn build
+        run: |
+          cd app
+          yarn build
       - name: Create Sentry release
         uses: getsentry/action-release@v1
         env:
