@@ -10,5 +10,8 @@
     "resolveJsonModule": true,
     "moduleResolution": "node",
     "esModuleInterop": true,
+    "sourceMap": true,
+    "inlineSources": true,
+    "sourceRoot": "src",
   }
 }
