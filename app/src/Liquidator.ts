@@ -13,9 +13,9 @@ import * as Sentry from "@sentry/node";
 import { withTimeout } from "./Utils";
 import Big from "big.js";
 
-const FACTORY_ADDRESS: string = process.env.FACTORY_ADDRESS!;
-const CREATE_ACCOUNT_TOPIC_ID: string = process.env.CREATE_ACCOUNT_TOPIC_ID!;
-const MARGIN_ACCOUNT_LENS_ADDRESS: string = process.env.MARGIN_ACCOUNT_LENS_ADDRESS!;
+const FACTORY_ADDRESS = "0x95110C9806833d3D3C250112fac73c5A6f631E80";
+const CREATE_ACCOUNT_TOPIC_ID = "0x1ff0a9a76572c6e0f2f781872c1e45b4bab3a0d90df274ebf884b4c11e3068f4";
+const MARGIN_ACCOUNT_LENS_ADDRESS = "0x8A15bfEBff7BF9ffaBBeAe49112Dc2E6C4E73Eaf";
 const WALLET_ADDRESS = process.env.WALLET_ADDRESS!;
 const ALOE_INITIAL_DEPLOY = 0;
 // TODO: lower this once we implement multi-call
@@ -167,6 +167,12 @@ export default class Liquidator {
     winston.log("info", `🪫 Powering down liquidation bot #${this.uniqueId}`);
     if (this.pollingInterval) {
       clearInterval(this.pollingInterval);
+    }
+    if (this.sanityCheckInterval) {
+      clearInterval(this.sanityCheckInterval);
+    }
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
     }
     if (this.processLiquidatableInterval) {
       clearInterval(this.processLiquidatableInterval);
