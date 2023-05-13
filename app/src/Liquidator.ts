@@ -30,6 +30,8 @@ const RECONNECT_MAX_ATTEMPTS = 5;
 const STATUS_HEALTHY = 200;
 const STATUS_NOT_HEALTHY = 503;
 const ERROR_THRESHOLD = 5;
+const SECONDS_PER_DAY = 86400;
+const SECONDS_BETWEEN_RESTARTS = 3 * SECONDS_PER_DAY; // 3 days
 
 export type HealthCheckResponse = {
   code: number;
@@ -189,7 +191,22 @@ export default class Liquidator {
    * @returns {Promise<HealthCheckResponse>} The health check response.
    */
   public async isHealthy(): Promise<HealthCheckResponse> {
-    // First check if the Liquidator has errored too many times
+    const time = process.uptime();
+    // Restart if the uptime exceeds the threshold
+    if (time > SECONDS_BETWEEN_RESTARTS) {
+      return {
+        code: STATUS_NOT_HEALTHY,
+        message: `uptime ${time} exceeds ${SECONDS_BETWEEN_RESTARTS}`,
+      };
+    }
+    // Check to make sure the provider is connected, if this is transient, the liquidator will recover
+    if (!this.provider.connected) {
+      return {
+        code: STATUS_NOT_HEALTHY,
+        message: "provider is not connected",
+      };
+    }
+    // Check if the Liquidator has errored too many times
     if (this.errorCount > ERROR_THRESHOLD) {
       return {
         code: STATUS_NOT_HEALTHY,
@@ -348,22 +365,10 @@ export default class Liquidator {
       const slot0 = await borrowerContract.methods.slot0().call();
       const unleashLiquidationTime = slot0.unleashLiquidationTime;
       if (unleashLiquidationTime === "0") {
-        const blockNumber = await this.web3.eth.getBlockNumber();
         winston.log(
           "debug",
           `#${this.uniqueId} 🚨 Something unexpected happened. ${shortName} reverted with an unknown message and has an unleashLiquidationTime of 0. Error encountered: ${estimatedGasResult.errorMsg}.`
         );
-        Sentry.withScope((scope) => {
-          scope.setContext("info", {
-            args: estimatedGasResult.args,
-            blockNumber: blockNumber,
-            liquidatorContractAddress: this.liquidatorContract.options.address,
-          });
-          Sentry.captureMessage(
-            `#${this.uniqueId} 🚨 Something unexpected happened. ${shortName} reverted with an unknown message and has an unleashLiquidationTime of 0. Error encountered: ${estimatedGasResult.errorMsg}.`,
-            "error"
-          );
-        });
       } else {
         winston.log(
           "debug",
