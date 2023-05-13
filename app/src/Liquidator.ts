@@ -12,14 +12,14 @@ import Bottleneck from "bottleneck";
 import * as Sentry from "@sentry/node";
 import { withTimeout } from "./Utils";
 import Big from "big.js";
+import { ContractCallContext, Multicall } from "ethereum-multicall";
 
 const FACTORY_ADDRESS = "0x95110C9806833d3D3C250112fac73c5A6f631E80";
 const CREATE_ACCOUNT_TOPIC_ID = "0x1ff0a9a76572c6e0f2f781872c1e45b4bab3a0d90df274ebf884b4c11e3068f4";
 const MARGIN_ACCOUNT_LENS_ADDRESS = "0x8A15bfEBff7BF9ffaBBeAe49112Dc2E6C4E73Eaf";
 const WALLET_ADDRESS = process.env.WALLET_ADDRESS!;
 const ALOE_INITIAL_DEPLOY = 0;
-// TODO: lower this once we implement multi-call
-const POLLING_INTERVAL_MS = 150_000; // 2.5 minutes
+const POLLING_INTERVAL_MS = 45_000; // 45 seconds
 export const PROCESS_LIQUIDATABLE_INTERVAL_MS = 20_000; // 20 seconds
 const HEARTBEAT_INTERVAL_MS = 15_000; // 15 seconds
 const HEARTBEAT_TIMEOUT_MS = 10_000; // 10 seconds
@@ -56,12 +56,6 @@ type EstimateGasLiquidationResult = {
   errorMsg?: string;
 };
 
-type BorrowerHealthResult = {
-  borrower: string;
-  health: number;
-  isHealthy: boolean;
-};
-
 export default class Liquidator {
   public static readonly MAX_STRAIN = 20;
   public static readonly MIN_STRAIN = 1;
@@ -72,8 +66,8 @@ export default class Liquidator {
   private heartbeatInterval: NodeJS.Timer | null;
   private provider: WebsocketProvider;
   private web3: Web3;
+  private multicall: Multicall;
   private liquidatorContract: Contract;
-  private marginAccountLensContract: Contract;
   private txManager: TxManager;
   private borrowers: string[];
   private uniqueId: string;
@@ -110,13 +104,13 @@ export default class Liquidator {
     this.provider = wsProvider;
     this.web3 = new Web3(wsProvider);
     this.web3.eth.handleRevert = true;
+    this.multicall = new Multicall({
+      web3Instance: this.web3,
+      tryAggregate: true,
+    });
     this.liquidatorContract = new this.web3.eth.Contract(
       LiquidatorABIJson as AbiItem[],
       liquidatorAddress
-    );
-    this.marginAccountLensContract = new this.web3.eth.Contract(
-      MarginAccountLensABIJson as AbiItem[],
-      MARGIN_ACCOUNT_LENS_ADDRESS
     );
     this.txManager = new TxManager(this.web3, this.liquidatorContract);
     this.borrowers = [];
@@ -275,17 +269,38 @@ export default class Liquidator {
    * @param borrowers The borrowers to scan.
    */
   private async scanBorrowers(): Promise<void> {
-    for (const borrower of this.borrowers) {
-      this.limiter.schedule(async () => {
-        const healthResult = await this.calculateBorrowerHealth(borrower);
-        winston.log(
-          "debug",
-          `#${this.uniqueId} Scan: ${healthResult.borrower} is ${healthResult.isHealthy ? "healthy" : "unhealthy"} (${healthResult.health})`
-        );
-        if (!healthResult.isHealthy) {
-          this.liquidateBorrower(healthResult.borrower);
+    const contractCallContext: ContractCallContext[] = this.borrowers.map((borrower) => {
+      return {
+        reference: borrower,
+        contractAddress: MARGIN_ACCOUNT_LENS_ADDRESS,
+        abi: MarginAccountLensABIJson,
+        calls: [
+          {
+            methodName: "getHealth",
+            methodParameters: [borrower, true],
+            reference: borrower,
+          }
+        ]
+      };
+    });
+    // Get the health of each borrower
+    const results = (await this.multicall.call(contractCallContext)).results;
+    // Check the health of each borrower and liquidate them if they're insolvent
+    for (const result of Object.entries(results)) {
+      const borrower = result[0];
+      const healthResults = result[1].callsReturnContext[0].returnValues;
+      const healthA = new Big(this.web3.utils.hexToNumberString(healthResults[0].hex)).div(10 ** 18).toNumber();
+      const healthB = new Big(this.web3.utils.hexToNumberString(healthResults[1].hex)).div(10 ** 18).toNumber();
+      const health = Math.min(healthA, healthB);
+      winston.log("debug", `#${this.uniqueId} ${borrower} has health ${health}`);
+      if (health <= 1) {
+        // TODO: Check if we need to warn the user first (and thus send a different message)
+        // Double check that the borrower is actually liquidatable
+        const estimatedGasResult: EstimateGasLiquidationResult = await this.estimateGasForLiquidation(borrower, 20);
+        if (estimatedGasResult.success) {
+          this.liquidateBorrower(borrower);
         }
-      });
+      }
     }
     // Shuffle the borrowers after each scan to randomize the order.
     this.limiter.schedule(() => {
@@ -414,19 +429,6 @@ export default class Liquidator {
         error: errorType,
         errorMsg,
       };
-    }
-  }
-  
-  private async calculateBorrowerHealth(borrower: string): Promise<BorrowerHealthResult> {
-    const healthResult = await this.marginAccountLensContract.methods.getHealth(borrower, true).call();
-    const [healthAStr, healthBStr]: [string, string] = [healthResult[0], healthResult[1]];
-    const [healthA, healthB] = [new Big(healthAStr).div(10 ** 18).toNumber(), new Big(healthBStr).div(10 ** 18).toNumber()];
-    const health = Math.min(healthA, healthB);
-    const isHealthy = health > 1;
-    return {
-      borrower,
-      health,
-      isHealthy,
     }
   }
 
