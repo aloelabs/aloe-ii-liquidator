@@ -5,21 +5,26 @@ import { Contract } from "web3-eth-contract";
 import { AbiItem } from "web3-utils";
 import LiquidatorABIJson from "./abis/Liquidator.json";
 import MarginAccountABIJson from "./abis/MarginAccount.json";
+import MarginAccountLensABIJson from "./abis/MarginAccountLens.json";
 import TxManager from "./TxManager";
 import winston from "winston";
 import Bottleneck from "bottleneck";
 import * as Sentry from "@sentry/node";
 import { withTimeout } from "./Utils";
+import Big from "big.js";
 
-const FACTORY_ADDRESS: string = process.env.FACTORY_ADDRESS!;
-const CREATE_ACCOUNT_TOPIC_ID: string = process.env.CREATE_ACCOUNT_TOPIC_ID!;
+const FACTORY_ADDRESS = "0x95110C9806833d3D3C250112fac73c5A6f631E80";
+const CREATE_ACCOUNT_TOPIC_ID = "0x1ff0a9a76572c6e0f2f781872c1e45b4bab3a0d90df274ebf884b4c11e3068f4";
+const MARGIN_ACCOUNT_LENS_ADDRESS = "0x8A15bfEBff7BF9ffaBBeAe49112Dc2E6C4E73Eaf";
 const WALLET_ADDRESS = process.env.WALLET_ADDRESS!;
 const ALOE_INITIAL_DEPLOY = 0;
+// TODO: lower this once we implement multi-call
 const POLLING_INTERVAL_MS = 150_000; // 2.5 minutes
 export const PROCESS_LIQUIDATABLE_INTERVAL_MS = 20_000; // 20 seconds
 const HEARTBEAT_INTERVAL_MS = 15_000; // 15 seconds
 const HEARTBEAT_TIMEOUT_MS = 10_000; // 10 seconds
-const CLIENT_KEEPALIVE_INTERVAL_MS = 60_000;
+const CLIENT_KEEPALIVE_INTERVAL_MS = 60_000; // 1 minute
+const SANITY_CHECK_INTERVAL_MS = 600_000; // 10 minutes
 const RECONNECT_DELAY_MS = 5_000;
 const RECONNECT_MAX_ATTEMPTS = 5;
 const STATUS_HEALTHY = 200;
@@ -51,16 +56,24 @@ type EstimateGasLiquidationResult = {
   errorMsg?: string;
 };
 
+type BorrowerHealthResult = {
+  borrower: string;
+  health: number;
+  isHealthy: boolean;
+};
+
 export default class Liquidator {
   public static readonly MAX_STRAIN = 20;
   public static readonly MIN_STRAIN = 1;
   public static readonly GAS_LIMIT = 3_000_000;
   private pollingInterval: NodeJS.Timer | null;
   private processLiquidatableInterval: NodeJS.Timer | null;
+  private sanityCheckInterval: NodeJS.Timer | null;
   private heartbeatInterval: NodeJS.Timer | null;
   private provider: WebsocketProvider;
   private web3: Web3;
   private liquidatorContract: Contract;
+  private marginAccountLensContract: Contract;
   private txManager: TxManager;
   private borrowers: string[];
   private uniqueId: string;
@@ -80,6 +93,7 @@ export default class Liquidator {
   ) {
     this.pollingInterval = null;
     this.processLiquidatableInterval = null;
+    this.sanityCheckInterval = null;
     this.heartbeatInterval = null;
     const wsProvider = new Web3.providers.WebsocketProvider(jsonRpcURL, {
       clientConfig: {
@@ -99,6 +113,10 @@ export default class Liquidator {
     this.liquidatorContract = new this.web3.eth.Contract(
       LiquidatorABIJson as AbiItem[],
       liquidatorAddress
+    );
+    this.marginAccountLensContract = new this.web3.eth.Contract(
+      MarginAccountLensABIJson as AbiItem[],
+      MARGIN_ACCOUNT_LENS_ADDRESS
     );
     this.txManager = new TxManager(this.web3, this.liquidatorContract);
     this.borrowers = [];
@@ -130,6 +148,11 @@ export default class Liquidator {
       this.scanBorrowers();
     }, POLLING_INTERVAL_MS);
 
+    this.sanityCheckInterval = setInterval(() => {
+      console.log(`#${this.uniqueId} Performing sanity check on ${Liquidator.getChainName(chainId)}...`);
+      this.performSanityCheck();
+    }, SANITY_CHECK_INTERVAL_MS);
+
     this.processLiquidatableInterval = setInterval(() => {
       console.log(`#${this.uniqueId} Processing liquidatable candidates on ${Liquidator.getChainName(chainId)}...`);
       this.txManager.processLiquidatableCandidates();
@@ -144,6 +167,12 @@ export default class Liquidator {
     winston.log("info", `🪫 Powering down liquidation bot #${this.uniqueId}`);
     if (this.pollingInterval) {
       clearInterval(this.pollingInterval);
+    }
+    if (this.sanityCheckInterval) {
+      clearInterval(this.sanityCheckInterval);
+    }
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
     }
     if (this.processLiquidatableInterval) {
       clearInterval(this.processLiquidatableInterval);
@@ -229,25 +258,32 @@ export default class Liquidator {
     );
   }
 
+  private liquidateBorrower(borrower: string): void {
+    // TODO: Check if we need to warn the user first (and thus send a different message)
+    // TODO: We probably don't actually want to log this here, at least not at "info" level (since that'll send it to Slack every time).
+    //       It gets called repeatedly until the borrower is actually liquidated. We really only want to send a notifiction when it's
+    //       first added to the queue, and when it either succeeds/fails/retries. Not on every scan.
+    winston.log(
+      "info",
+      `#${this.uniqueId} 🧜 Sending \`${borrower}\` to transaction manager for liquidation!`
+    );
+    this.txManager.addLiquidatableAccount(borrower);
+  }
+
   /**
    * Scans the borrowers and sends them to the transaction manager for liquidation (if they're insolvent).
    * @param borrowers The borrowers to scan.
    */
-  private scanBorrowers(): void {
+  private async scanBorrowers(): Promise<void> {
     for (const borrower of this.borrowers) {
       this.limiter.schedule(async () => {
-        const solvent: boolean = await this.isSolvent(borrower);
-        console.log("Is solvent?", solvent, borrower);
-        if (!solvent) {
-          // TODO: We probably don't actually want to log this here, at least not at "info" level (since that'll send it to Slack every time).
-          //       It gets called repeatedly until the borrower is actually liquidated. We really only want to send a notifiction when it's
-          //       first added to the queue, and when it either succeeds/fails/retries. Not on every scan.
-          winston.log(
-            "info",
-            `#${this.uniqueId} 🧜 Sending \`${borrower}\` to transaction manager for liquidation!`
-          );
-          console.log("Adding borrower to liquidation queue...", borrower);
-          this.txManager.addLiquidatableAccount(borrower);
+        const healthResult = await this.calculateBorrowerHealth(borrower);
+        winston.log(
+          "debug",
+          `#${this.uniqueId} Scan: ${healthResult.borrower} is ${healthResult.isHealthy ? "healthy" : "unhealthy"} (${healthResult.health})`
+        );
+        if (!healthResult.isHealthy) {
+          this.liquidateBorrower(healthResult.borrower);
         }
       });
     }
@@ -260,7 +296,20 @@ export default class Liquidator {
     });
   }
 
-  async isSolvent(borrower: string): Promise<boolean> {
+  private async performSanityCheck(): Promise<void> {
+    for (const borrower of this.borrowers) {
+      this.limiter.schedule(async () => {
+        const solvent: boolean = await this.isSolvent(borrower);
+        winston.log("debug", `#${this.uniqueId} Sanity check: ${borrower} is ${solvent ? "healthy" : "unhealthy"}`);
+        if (!solvent) {
+          this.liquidateBorrower(borrower);
+        }
+      });
+    }
+  }
+
+  // TODO: clean up this function
+  private async isSolvent(borrower: string): Promise<boolean> {
     const shortName = borrower.slice(0, 8);
     winston.log(
       "debug",
@@ -365,6 +414,19 @@ export default class Liquidator {
         error: errorType,
         errorMsg,
       };
+    }
+  }
+  
+  private async calculateBorrowerHealth(borrower: string): Promise<BorrowerHealthResult> {
+    const healthResult = await this.marginAccountLensContract.methods.getHealth(borrower, true).call();
+    const [healthAStr, healthBStr]: [string, string] = [healthResult[0], healthResult[1]];
+    const [healthA, healthB] = [new Big(healthAStr).div(10 ** 18).toNumber(), new Big(healthBStr).div(10 ** 18).toNumber()];
+    const health = Math.min(healthA, healthB);
+    const isHealthy = health > 1;
+    return {
+      borrower,
+      health,
+      isHealthy,
     }
   }
 

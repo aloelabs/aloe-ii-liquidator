@@ -20,22 +20,28 @@ const MS_BETWEEN_REQUESTS = 250;
 const limiter = new Bottleneck({
   minTime: MS_BETWEEN_REQUESTS,
 });
-const LIQUIDATOR_ADDRESS = process.env.LIQUIDATOR_ADDRESS!;
+const LIQUIDATOR_ADDRESS = "0xe20fcDBC99fcfaCfEb319CC4536294Bd13d350A4";
 const liquidators: Liquidator[] = [
   new Liquidator(OPTIMISM_ALCHEMY_URL, LIQUIDATOR_ADDRESS, limiter),
   new Liquidator(ARBITRUM_ALCHEMY_URL, LIQUIDATOR_ADDRESS, limiter),
 ];
 
-Sentry.init({
-  dsn: `https://${process.env.SENTRY_DSN0}@${process.env.SENTRY_DSN1}.ingest.sentry.io/${process.env.SENTRY_DSN2}`,
-  sampleRate: 0.01,
-  enabled:
-    process.env.SENTRY_DSN0 !== undefined &&
-    process.env.SENTRY_DSN1 !== undefined &&
-    process.env.SENTRY_DSN2 !== undefined,
-  autoSessionTracking: false,
-  release: process.env.GIT_COMMIT_SHA || undefined,
-});
+if (
+  process.env.SENTRY_DSN0 !== undefined &&
+  process.env.SENTRY_DSN1 !== undefined &&
+  process.env.SENTRY_DSN2 !== undefined
+) {
+  Sentry.init({
+    dsn: `https://${process.env.SENTRY_DSN0}@${process.env.SENTRY_DSN1}.ingest.sentry.io/${process.env.SENTRY_DSN2}`,
+    sampleRate: 0.1,
+    enabled:
+      process.env.SENTRY_DSN0 !== undefined &&
+      process.env.SENTRY_DSN1 !== undefined &&
+      process.env.SENTRY_DSN2 !== undefined,
+    autoSessionTracking: false,
+    release: process.env.GIT_COMMIT_SHA || undefined,
+  });
+}
 
 app.get("/liquidator_liveness_check", (req, res) => {
   res.status(STATUS_OK).send({ status: "ok" });
