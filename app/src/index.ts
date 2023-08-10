@@ -12,6 +12,7 @@ const OPTIMISM_ALCHEMY_URL = `wss://opt-mainnet.g.alchemy.com/v2/${process.env
   .ALCHEMY_API_KEY!}`;
 const ARBITRUM_ALCHEMY_URL = `wss://arb-mainnet.g.alchemy.com/v2/${process.env
   .ALCHEMY_API_KEY!}`;
+const BASE_ANKR_URL = `wss://rpc.ankr.com/base/ws/${process.env.ANKR_API_KEY!}`;
 const SLACK_WEBHOOK_URL = `https://hooks.slack.com/services/${process.env.SLACK_WEBHOOK0}/${process.env.SLACK_WEBHOOK1}/${process.env.SLACK_WEBHOOK2}`;
 const port = process.env.PORT || 8080;
 const app = express();
@@ -22,6 +23,7 @@ const limiter = new Bottleneck({
 });
 const LIQUIDATOR_ADDRESS = "0xe20fcDBC99fcfaCfEb319CC4536294Bd13d350A4";
 const liquidators: Liquidator[] = [
+  new Liquidator(BASE_ANKR_URL, LIQUIDATOR_ADDRESS, limiter),
   new Liquidator(OPTIMISM_ALCHEMY_URL, LIQUIDATOR_ADDRESS, limiter),
   new Liquidator(ARBITRUM_ALCHEMY_URL, LIQUIDATOR_ADDRESS, limiter),
 ];

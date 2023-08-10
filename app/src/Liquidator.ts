@@ -10,13 +10,35 @@ import TxManager from "./TxManager";
 import winston from "winston";
 import Bottleneck from "bottleneck";
 import * as Sentry from "@sentry/node";
-import { withTimeout } from "./Utils";
+import { getLogsBaseScan, withTimeout } from "./Utils";
 import Big from "big.js";
 import { ContractCallContext, Multicall } from "ethereum-multicall";
 
-const FACTORY_ADDRESS = "0x95110C9806833d3D3C250112fac73c5A6f631E80";
-const CREATE_ACCOUNT_TOPIC_ID = "0x1ff0a9a76572c6e0f2f781872c1e45b4bab3a0d90df274ebf884b4c11e3068f4";
-const MARGIN_ACCOUNT_LENS_ADDRESS = "0x8A15bfEBff7BF9ffaBBeAe49112Dc2E6C4E73Eaf";
+const ALOE_II_FACTORY_ADDRESS_OPTIMISM =
+  "0x95110C9806833d3D3C250112fac73c5A6f631E80";
+const ALOE_II_FACTORY_ADDRESS_ARBITRUM =
+  "0x95110C9806833d3D3C250112fac73c5A6f631E80";
+const ALOE_II_FACTORY_ADDRESS_BASE =
+  "0xA56eA45565478Fcd131AEccaB2FE934F23BAD8dc";
+const FACTORY_ADDRESS: { [key: number]: string } = {
+  10: ALOE_II_FACTORY_ADDRESS_OPTIMISM,
+  42161: ALOE_II_FACTORY_ADDRESS_ARBITRUM,
+  8453: ALOE_II_FACTORY_ADDRESS_BASE,
+};
+const ALOE_II_MARGIN_ACCOUNT_LENS_ADDRESS_OPTIMISM =
+  "0x8A15bfEBff7BF9ffaBBeAe49112Dc2E6C4E73Eaf";
+const ALOE_II_MARGIN_ACCOUNT_LENS_ADDRESS_ARBITRUM =
+  "0x8A15bfEBff7BF9ffaBBeAe49112Dc2E6C4E73Eaf";
+const ALOE_II_MARGIN_ACCOUNT_LENS_ADDRESS_BASE =
+  "0x1B054cc7D2E54329c1f5B350Fb8C690eA7A5ec3F";
+const ALOE_II_MARGIN_ACCOUNT_LENS_ADDRESS: { [key: number]: string } = {
+  10: ALOE_II_MARGIN_ACCOUNT_LENS_ADDRESS_OPTIMISM,
+  42161: ALOE_II_MARGIN_ACCOUNT_LENS_ADDRESS_ARBITRUM,
+  8453: ALOE_II_MARGIN_ACCOUNT_LENS_ADDRESS_BASE,
+};
+const MULTICALL_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
+const CREATE_ACCOUNT_TOPIC_ID =
+  "0x1ff0a9a76572c6e0f2f781872c1e45b4bab3a0d90df274ebf884b4c11e3068f4";
 const WALLET_ADDRESS = process.env.WALLET_ADDRESS!;
 const ALOE_INITIAL_DEPLOY = 0;
 const POLLING_INTERVAL_MS = 45_000; // 45 seconds
@@ -109,6 +131,7 @@ export default class Liquidator {
     this.multicall = new Multicall({
       web3Instance: this.web3,
       tryAggregate: true,
+      multicallCustomContractAddress: MULTICALL_ADDRESS,
     });
     this.liquidatorContract = new this.web3.eth.Contract(
       LiquidatorABIJson as AbiItem[],
@@ -136,21 +159,35 @@ export default class Liquidator {
     );
     this.txManager.init(chainId);
 
-    this.collectBorrowers(ALOE_INITIAL_DEPLOY);
+    await this.collectBorrowers(ALOE_INITIAL_DEPLOY, chainId);
     this.startHeartbeat();
 
     this.pollingInterval = setInterval(() => {
-      console.log(`#${this.uniqueId} Scanning borrowers on ${Liquidator.getChainName(chainId)}...`);
-      this.scanBorrowers();
+      console.log(
+        `#${this.uniqueId} Scanning borrowers on ${Liquidator.getChainName(
+          chainId
+        )}...`
+      );
+      this.scanBorrowers(chainId);
     }, POLLING_INTERVAL_MS);
 
     this.sanityCheckInterval = setInterval(() => {
-      console.log(`#${this.uniqueId} Performing sanity check on ${Liquidator.getChainName(chainId)}...`);
+      console.log(
+        `#${this.uniqueId} Performing sanity check on ${Liquidator.getChainName(
+          chainId
+        )}...`
+      );
       this.performSanityCheck();
     }, SANITY_CHECK_INTERVAL_MS);
 
     this.processLiquidatableInterval = setInterval(() => {
-      console.log(`#${this.uniqueId} Processing liquidatable candidates on ${Liquidator.getChainName(chainId)}...`);
+      console.log(
+        `#${
+          this.uniqueId
+        } Processing liquidatable candidates on ${Liquidator.getChainName(
+          chainId
+        )}...`
+      );
       this.txManager.processLiquidatableCandidates();
     }, PROCESS_LIQUIDATABLE_INTERVAL_MS);
   }
@@ -232,7 +269,7 @@ export default class Liquidator {
    * @param error
    * @param result
    */
-  private collectBorrowersCallback(error: Error, result: Log) {
+  private collectBorrowersCallback(error: Error | null, result: Log) {
     if (!error) {
       const borrowerAddress: string = Liquidator.formatAddress(result.data);
       if (!this.borrowers.includes(borrowerAddress)) {
@@ -249,7 +286,10 @@ export default class Liquidator {
       }
     } else {
       this.errorCount += 1;
-      winston.log("error", `#${this.uniqueId} Error when collecting borrowers: ${error}`);
+      winston.log(
+        "error",
+        `#${this.uniqueId} Error when collecting borrowers: ${error}`
+      );
     }
   }
 
@@ -257,13 +297,35 @@ export default class Liquidator {
    * Collects the borrowers from the Aloe Factory contract.
    * @param block The block to start collecting borrowers from.
    */
-  private collectBorrowers(block: number) {
+  private async collectBorrowers(block: number, chainId: number) {
+    if (chainId === 8453) {
+      // Base doesn't let us get past logs, so we have to use basescan to get the initial list of borrowers
+      const response = await getLogsBaseScan(
+        0,
+        FACTORY_ADDRESS[chainId],
+        [CREATE_ACCOUNT_TOPIC_ID],
+        true
+      );
+      const status = response.status;
+      if (status === 200) {
+        const logs = response.data.result;
+        for (const log of logs) {
+          this.collectBorrowersCallback(null, log);
+        }
+      } else {
+        this.errorCount += 1;
+        winston.log(
+          "error",
+          `#${this.uniqueId} Error when collecting borrowers: ${status}`
+        );
+      }
+    }
     this.web3.eth.subscribe(
       "logs",
       {
-        address: FACTORY_ADDRESS,
+        address: FACTORY_ADDRESS[chainId],
         topics: [CREATE_ACCOUNT_TOPIC_ID],
-        fromBlock: block,
+        fromBlock: 0,
       },
       this.collectBorrowersCallback.bind(this)
     );
@@ -285,35 +347,49 @@ export default class Liquidator {
    * Scans the borrowers and sends them to the transaction manager for liquidation (if they're insolvent).
    * @param borrowers The borrowers to scan.
    */
-  private async scanBorrowers(): Promise<void> {
-    const contractCallContext: ContractCallContext[] = this.borrowers.map((borrower) => {
-      return {
-        reference: borrower,
-        contractAddress: MARGIN_ACCOUNT_LENS_ADDRESS,
-        abi: MarginAccountLensABIJson,
-        calls: [
-          {
-            methodName: "getHealth",
-            methodParameters: [borrower, true],
-            reference: borrower,
-          }
-        ]
-      };
-    });
+  private async scanBorrowers(chainId: number): Promise<void> {
+    const contractCallContext: ContractCallContext[] = this.borrowers.map(
+      (borrower) => {
+        return {
+          reference: borrower,
+          contractAddress: ALOE_II_MARGIN_ACCOUNT_LENS_ADDRESS[chainId],
+          abi: MarginAccountLensABIJson,
+          calls: [
+            {
+              methodName: "getHealth",
+              methodParameters: [borrower, true],
+              reference: borrower,
+            },
+          ],
+        };
+      }
+    );
     // Get the health of each borrower
     const results = (await this.multicall.call(contractCallContext)).results;
     // Check the health of each borrower and liquidate them if they're insolvent
     for (const result of Object.entries(results)) {
       const borrower = result[0];
       const healthResults = result[1].callsReturnContext[0].returnValues;
-      const healthA = new Big(this.web3.utils.hexToNumberString(healthResults[0].hex)).div(10 ** 18).toNumber();
-      const healthB = new Big(this.web3.utils.hexToNumberString(healthResults[1].hex)).div(10 ** 18).toNumber();
+      const healthA = new Big(
+        this.web3.utils.hexToNumberString(healthResults[0].hex)
+      )
+        .div(10 ** 18)
+        .toNumber();
+      const healthB = new Big(
+        this.web3.utils.hexToNumberString(healthResults[1].hex)
+      )
+        .div(10 ** 18)
+        .toNumber();
       const health = Math.min(healthA, healthB);
-      winston.log("debug", `#${this.uniqueId} ${borrower} has health ${health}`);
+      winston.log(
+        "debug",
+        `#${this.uniqueId} ${borrower} has health ${health}`
+      );
       if (health <= 1) {
         // TODO: Check if we need to warn the user first (and thus send a different message)
         // Double check that the borrower is actually liquidatable
-        const estimatedGasResult: EstimateGasLiquidationResult = await this.estimateGasForLiquidation(borrower, 20);
+        const estimatedGasResult: EstimateGasLiquidationResult =
+          await this.estimateGasForLiquidation(borrower, 20);
         if (estimatedGasResult.success) {
           this.liquidateBorrower(borrower);
         }
@@ -332,7 +408,12 @@ export default class Liquidator {
     for (const borrower of this.borrowers) {
       this.limiter.schedule(async () => {
         const solvent: boolean = await this.isSolvent(borrower);
-        winston.log("debug", `#${this.uniqueId} Sanity check: ${borrower} is ${solvent ? "healthy" : "unhealthy"}`);
+        winston.log(
+          "debug",
+          `#${this.uniqueId} Sanity check: ${borrower} is ${
+            solvent ? "healthy" : "unhealthy"
+          }`
+        );
         if (!solvent) {
           this.liquidateBorrower(borrower);
         }
@@ -354,7 +435,10 @@ export default class Liquidator {
     } else if (estimatedGasResult.error === LiquidationError.Healthy) {
       return true;
     } else if (estimatedGasResult.error === LiquidationError.Grace) {
-      winston.log("info", `#${this.uniqueId} ⏳ ${shortName} is in grace period`);
+      winston.log(
+        "info",
+        `#${this.uniqueId} ⏳ ${shortName} is in grace period`
+      );
       return true;
     } else {
       // Checking the unleashLiquidationTime is a workaround for a none-critical bug.
@@ -399,7 +483,10 @@ export default class Liquidator {
     ) {
       throw new Error(`Invalid strain: ${strain}`);
     }
-    const encodedAddress = this.web3.eth.abi.encodeParameter("address", WALLET_ADDRESS);
+    const encodedAddress = this.web3.eth.abi.encodeParameter(
+      "address",
+      WALLET_ADDRESS
+    );
     try {
       const estimatedGasLimit: number = await this.liquidatorContract.methods
         .liquidate(borrower, encodedAddress, integerStrain)
@@ -413,7 +500,7 @@ export default class Liquidator {
           borrower,
           data: encodedAddress,
           strain: integerStrain,
-        }
+        },
       };
     } catch (e) {
       const errorMsg = (e as Error).message;
@@ -466,7 +553,10 @@ export default class Liquidator {
       randomIndex = Math.floor(Math.random() * currentIndex);
       currentIndex -= 1;
 
-      [this.borrowers[currentIndex], this.borrowers[randomIndex]] = [this.borrowers[randomIndex], this.borrowers[currentIndex]];
+      [this.borrowers[currentIndex], this.borrowers[randomIndex]] = [
+        this.borrowers[randomIndex],
+        this.borrowers[currentIndex],
+      ];
     }
   }
 
@@ -485,6 +575,8 @@ export default class Liquidator {
         return "https://optimistic.etherscan.io/tx/";
       case 42161:
         return "https://arbiscan.io/tx/";
+      case 8453:
+        return "https://basescan.org/tx/";
       default:
         return "https://etherscan.io/tx/";
     }
@@ -505,6 +597,8 @@ export default class Liquidator {
         return "optimism";
       case 42161:
         return "arbitrum";
+      case 8453:
+        return "base";
       default:
         return "unknown";
     }
