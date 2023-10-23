@@ -84,10 +84,10 @@ export default class Liquidator {
   public static readonly MAX_STRAIN = 20;
   public static readonly MIN_STRAIN = 1;
   public static readonly GAS_LIMIT = 3_000_000;
-  private pollingInterval: NodeJS.Timer | null;
-  private processLiquidatableInterval: NodeJS.Timer | null;
-  private sanityCheckInterval: NodeJS.Timer | null;
-  private heartbeatInterval: NodeJS.Timer | null;
+  private pollingInterval: NodeJS.Timeout | null;
+  private processLiquidatableInterval: NodeJS.Timeout | null;
+  private sanityCheckInterval: NodeJS.Timeout | null;
+  private heartbeatInterval: NodeJS.Timeout | null;
   private provider: WebsocketProvider;
   private web3: Web3;
   private multicall: Multicall;
