@@ -14,13 +14,9 @@ jobs:
         with:
           node-version: 16
       - name: Install dependencies
-        run: |
-          cd app
-          yarn install
+        run: yarn install
       - name: Build
-        run: |
-          cd app
-          yarn build
+        run: yarn build
       - name: Create Sentry release
         uses: getsentry/action-release@v1
         env:
@@ -30,4 +26,4 @@ jobs:
         with:
           environment: production
           version: ${{ github.sha }}
-          sourcemaps: 'app/lib'
+          sourcemaps: '/lib'
