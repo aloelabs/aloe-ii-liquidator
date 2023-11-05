@@ -7,6 +7,8 @@ steps:
         "WALLET_PRIVATE_KEY",
         "API_TOKEN",
         "ALCHEMY_API_KEY",
+        "ANKR_API_KEY",
+        "BASESCAN_API_KEY",
         "SLACK_WEBHOOK0",
         "SLACK_WEBHOOK1",
         "SLACK_WEBHOOK2",
@@ -29,6 +31,8 @@ steps:
         "WALLET_PRIVATE_KEY",
         "API_TOKEN",
         "ALCHEMY_API_KEY",
+        "ANKR_API_KEY",
+        "BASESCAN_API_KEY",
         "SLACK_WEBHOOK0",
         "SLACK_WEBHOOK1",
         "SLACK_WEBHOOK2",
@@ -58,6 +62,10 @@ availableSecrets:
       env: "API_TOKEN"
     - versionName: projects/$PROJECT_ID/secrets/ALCHEMY_API_KEY/versions/latest
       env: "ALCHEMY_API_KEY"
+    - versionName: projects/605012520769/secrets/ANKR_API_KEY/versions/latest
+      env: "ANKR_API_KEY"
+    - versionName: projects/$PROJECT_ID/secrets/BASESCAN_API_KEY/versions/latest
+      env: "BASESCAN_API_KEY"
     - versionName: projects/$PROJECT_ID/secrets/SLACK_WEBHOOK0/versions/latest
       env: "SLACK_WEBHOOK0"
     - versionName: projects/$PROJECT_ID/secrets/SLACK_WEBHOOK1/versions/latest
