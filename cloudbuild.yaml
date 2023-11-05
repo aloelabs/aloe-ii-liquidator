@@ -21,7 +21,7 @@ steps:
     args:
       [
         "-c",
-        "gcloud compute instance-templates create-with-container liquidator-template-$COMMIT_SHA --container-image=gcr.io/$PROJECT_ID/$REPO_NAME:$COMMIT_SHA --container-env=WALLET_ADDRESS=$$WALLET_ADDRESS,WALLET_PRIVATE_KEY=$$WALLET_PRIVATE_KEY,API_TOKEN=$$API_TOKEN,ALCHEMY_API_KEY=$$ALCHEMY_API_KEY,SLACK_WEBHOOK0=$$SLACK_WEBHOOK0,SLACK_WEBHOOK1=$$SLACK_WEBHOOK1,SLACK_WEBHOOK2=$$SLACK_WEBHOOK2,SENTRY_DSN0=$$SENTRY_DSN0,SENTRY_DSN1=$$SENTRY_DSN1,SENTRY_DSN2=$$SENTRY_DSN2 --machine-type=e2-small --tags=default-allow-http,default-allow-https",
+        "gcloud compute instance-templates create-with-container liquidator-template-$COMMIT_SHA --container-image=gcr.io/$PROJECT_ID/$REPO_NAME:$COMMIT_SHA --container-env=WALLET_ADDRESS=$$WALLET_ADDRESS,WALLET_PRIVATE_KEY=$$WALLET_PRIVATE_KEY,API_TOKEN=$$API_TOKEN,ALCHEMY_API_KEY=$$ALCHEMY_API_KEY,SLACK_WEBHOOK0=$$SLACK_WEBHOOK0,SLACK_WEBHOOK1=$$SLACK_WEBHOOK1,SLACK_WEBHOOK2=$$SLACK_WEBHOOK2,SENTRY_DSN0=$$SENTRY_DSN0,SENTRY_DSN1=$$SENTRY_DSN1,SENTRY_DSN2=$$SENTRY_DSN2 --machine-type=e2-small --tags=http-server,https-server",
       ]
     secretEnv:
       [
