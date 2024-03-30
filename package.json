@@ -4,7 +4,7 @@
   "main": "index.ts",
   "license": "MIT",
   "engines": {
-    "node": "16.x.x",
+    "node": "20.x.x",
     "yarn": ">=1.0.0 <2.0.0"
   },
   "devDependencies": {
