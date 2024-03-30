@@ -52,15 +52,6 @@ steps:
         "--version=template=liquidator-template-$COMMIT_SHA",
         "--zone=us-central1-a",
       ]
-  - name: "gcr.io/cloud-builders/gcloud"
-    args:
-      [
-        "compute",
-        "instance-groups",
-        "managed",
-        "recreate-instances",
-        "liquidator-instance-group-3",
-      ]
 availableSecrets:
   secretManager:
     - versionName: projects/$PROJECT_ID/secrets/WALLET_ADDRESS/versions/latest
