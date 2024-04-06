@@ -1,7 +1,8 @@
 import { expect, test } from '@jest/globals';
 
 import { readConfig, Config } from './config';
-import invalidConfig from './test-data/invalidConfig.json';
+import configWithInvalidValue from './test-data/invalidConfig/invalidValue.json';
+import configWithMissingField from './test-data/invalidConfig/missingField.json';
 import validConfig from './test-data/validConfig.json';
 
 test('valid config parsed correctly', () => {
@@ -34,6 +35,11 @@ test('valid config parsed correctly', () => {
 });
 
 test('invalid config returns null', () => {
-  const parsed = readConfig(invalidConfig);
+  const parsed = readConfig(configWithInvalidValue);
+  expect(parsed).toBeNull();
+});
+
+test('config with missing field returns null', () => {
+  const parsed = readConfig(configWithMissingField);
   expect(parsed).toBeNull();
 });

@@ -6,16 +6,16 @@ export interface Config {
   multicallAddress: Address;
   createAccountTopicID: string;
   initialDeploy: number;
-  pollingInterval: number;
-  processLiquidatableInterval: number;
-  heartbeatInterval: number;
-  heartbeatTimeout: number;
-  clientKeepAliveTimeout: number;
-  sanityCheckInterval: number;
-  reconnectDelay: number;
-  reconnectMaxAttemmpts: number;
+  pollingInterval?: number;
+  processLiquidatableInterval?: number;
+  heartbeatInterval?: number;
+  heartbeatTimeout?: number;
+  clientKeepAliveTimeout?: number;
+  sanityCheckInterval?: number;
+  reconnectDelay?: number;
+  reconnectMaxAttemmpts?: number;
   errorThreshold: number;
-  restartTimeout: number;
+  restartTimeout?: number;
 }
 
 interface aloeChainConfig {
@@ -32,10 +32,10 @@ type ConditionFunc<T> = (input: T) => boolean;
 const defaultTimeUnit = 'millisecond';
 const emptyString = '';
 
-const greaterThanZero = (input: number) => {
+const greaterThanZero = (input: number | undefined) => {
   return input !== undefined && input > 0;
 };
-const greaterThanOrEqualToZero = (input: number) => {
+const greaterThanOrEqualToZero = (input: number | undefined) => {
   return input !== undefined && input >= 0;
 };
 const isAddress = (input: string, chainNumber?: number) => {
@@ -63,25 +63,17 @@ function parseConfig(obj: any): Config {
     multicallAddress: obj.multicallAddress,
     createAccountTopicID: obj.createAccountTopicID,
     initialDeploy: obj.initialDeploy,
-    pollingInterval: getDuration(obj.pollingInterval),
-    processLiquidatableInterval: getDuration(obj.processLiquidatableInterval),
-    heartbeatInterval: getDuration(obj.heartbeatInterval),
-    heartbeatTimeout: getDuration(obj.heartbeatTimeout),
-    clientKeepAliveTimeout: getDuration(obj.clientKeepAliveTimeout),
-    sanityCheckInterval: getDuration(obj.sanityCheckInterval),
-    reconnectDelay: getDuration(obj.reconnectDelay),
+    pollingInterval: parse(obj.pollingInterval, defaultTimeUnit),
+    processLiquidatableInterval: parse(obj.processLiquidatableInterval, defaultTimeUnit),
+    heartbeatInterval: parse(obj.heartbeatInterval, defaultTimeUnit),
+    heartbeatTimeout: parse(obj.heartbeatTimeout, defaultTimeUnit),
+    clientKeepAliveTimeout: parse(obj.clientKeepAliveTimeout, defaultTimeUnit),
+    sanityCheckInterval: parse(obj.sanityCheckInterval, defaultTimeUnit),
+    reconnectDelay: parse(obj.reconnectDelay, defaultTimeUnit),
     reconnectMaxAttemmpts: obj.reconnectMaxAttemmpts,
-    errorThreshold: getDuration(obj.errorThreshold),
-    restartTimeout: getDuration(obj.restartTimeout),
-  } as Config;
-}
-
-function getDuration(quantity: string): number {
-  const duration = parse(quantity, defaultTimeUnit);
-  if (!duration) {
-    return 0;
-  }
-  return duration;
+    errorThreshold: obj.errorThreshold,
+    restartTimeout: parse(obj.restartTimeout, defaultTimeUnit),
+  };
 }
 
 function isValidChainConfig(chainConfig: aloeChainConfig) {
