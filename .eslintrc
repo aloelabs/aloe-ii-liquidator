@@ -1,0 +1,54 @@
+{
+  "root": true,
+  "parser": "@typescript-eslint/parser",
+  "plugins": ["@typescript-eslint", "import"],
+  "extends": [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/eslint-recommended",
+    "plugin:@typescript-eslint/recommended",
+  ],
+  "rules": {
+    "no-var": "warn",
+    "max-len": ["warn", { "code": 120 }],
+    "no-eval": "error",
+    "object-property-newline": ["warn", { "allowAllPropertiesOnSameLine": true }],
+    "object-curly-newline": [
+      "error",
+      {
+        "ObjectExpression": { "multiline": true, "minProperties": 4, "consistent": false },
+        "ObjectPattern": { "multiline": true },
+        "ImportDeclaration": { "multiline": true },
+        "ExportDeclaration": { "multiline": true },
+      },
+    ],
+    "object-curly-spacing": ["error", "always"],
+    "eqeqeq": ["warn", "smart"],
+    "no-return-await": "warn",
+    "comma-dangle": [
+      "warn",
+      {
+        "arrays": "always-multiline",
+        "objects": "always-multiline",
+        "imports": "always-multiline",
+        "exports": "always-multiline",
+        "functions": "only-multiline",
+      },
+    ],
+    "eol-last": ["warn", "always"],
+    "import/order": [
+      "warn",
+      {
+        "groups": ["builtin", "external", "internal"],
+        "newlines-between": "always",
+        "alphabetize": {
+          "order": "asc",
+          "caseInsensitive": true,
+        },
+      },
+    ],
+  },
+  "parserOptions": {
+    "sourceType": "module",
+    "ecmaVersion": 2016,
+  },
+}
