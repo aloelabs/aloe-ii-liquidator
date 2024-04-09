@@ -1,13 +1,11 @@
 import { expect, test } from '@jest/globals';
 
-import { readConfig, Config } from './config';
-import configWithInvalidValue from './test-data/invalidConfig/invalidValue.json';
-import configWithMissingField from './test-data/invalidConfig/missingField.json';
-import validConfig from './test-data/validConfig.json';
+import { readConfig } from './config';
+import { validConfig, invalidValueConfig } from './testConfigs';
 
 test('valid config parsed correctly', () => {
   const parsed = readConfig(validConfig);
-  const parsedConfig: Config = {
+  const parsedConfig = {
     chainConfigs: [
       {
         chainName: 'optimism',
@@ -34,12 +32,6 @@ test('valid config parsed correctly', () => {
   expect(parsed).toEqual(parsedConfig);
 });
 
-test('invalid config returns null', () => {
-  const parsed = readConfig(configWithInvalidValue);
-  expect(parsed).toBeNull();
-});
-
-test('config with missing field returns null', () => {
-  const parsed = readConfig(configWithMissingField);
-  expect(parsed).toBeNull();
+test('invalid config throws error', () => {
+  expect(() => readConfig(invalidValueConfig)).toThrowError(new Error('Invalid duration provided: garbage'));
 });

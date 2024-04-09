@@ -1,82 +1,94 @@
 import parse from 'parse-duration';
 import Web3 from 'web3';
 
-export interface Config {
-  chainConfigs: aloeChainConfig[];
+export type BaseConfig = {
+  chainConfigs: AloeChainConfig[];
   multicallAddress: Address;
   createAccountTopicID: string;
   initialDeploy: number;
-  pollingInterval?: number;
-  processLiquidatableInterval?: number;
-  heartbeatInterval?: number;
-  heartbeatTimeout?: number;
-  clientKeepAliveTimeout?: number;
-  sanityCheckInterval?: number;
-  reconnectDelay?: number;
-  reconnectMaxAttemmpts?: number;
+  reconnectMaxAttemmpts: number;
   errorThreshold: number;
-  restartTimeout?: number;
-}
+};
 
-interface aloeChainConfig {
+type AloeChainConfig = {
   chainName: string;
   chainNumber: number;
   factory: Address;
   borrowerLens: Address;
   borrower: Address;
-}
+};
+
+type NumericalFieldsAs<T> = {
+  pollingInterval: T;
+  processLiquidatableInterval: T;
+  heartbeatInterval: T;
+  heartbeatTimeout: T;
+  clientKeepAliveTimeout: T;
+  sanityCheckInterval: T;
+  reconnectDelay: T;
+  restartTimeout: T;
+};
+
+type UnparsedConfig = BaseConfig & NumericalFieldsAs<string>;
+type Config = BaseConfig & NumericalFieldsAs<number | undefined>;
 
 type Address = string;
 type ConditionFunc<T> = (input: T) => boolean;
 
-const defaultTimeUnit = 'millisecond';
-const emptyString = '';
+const DEFAULT_TIME_UNIT = 'millisecond';
 
 const greaterThanZero = (input: number | undefined) => {
   return input !== undefined && input > 0;
 };
+
 const greaterThanOrEqualToZero = (input: number | undefined) => {
   return input !== undefined && input >= 0;
 };
+
 const isAddress = (input: string, chainNumber?: number) => {
-  return input !== emptyString && Web3.utils.isAddress(input, chainNumber);
-};
-const isNotEmpty = (input: string) => {
-  return input !== emptyString;
+  return Web3.utils.isAddress(input, chainNumber);
 };
 
-export function readConfig(json: any): Config | null {
-  try {
-    const config: Config = parseConfig(json);
-    if (isValidConfig(config)) {
-      return config;
-    }
-  } catch (error) {
-    console.error('Error parsing JSON to config:', error);
+const isNotEmpty = (input: string) => {
+  return input !== '';
+};
+
+export function readConfig(unparsedConfig: UnparsedConfig): Config {
+  const config = parseConfig(unparsedConfig);
+  if (!isValidConfig(config)) {
+    throw new Error('Invalid config provided');
   }
-  return null;
+  return config;
 }
 
-function parseConfig(obj: any): Config {
+function parseConfig(config: UnparsedConfig): Config {
   return {
-    chainConfigs: obj.chainConfigs.map((item: aloeChainConfig) => item),
-    multicallAddress: obj.multicallAddress,
-    createAccountTopicID: obj.createAccountTopicID,
-    initialDeploy: obj.initialDeploy,
-    pollingInterval: parse(obj.pollingInterval, defaultTimeUnit),
-    processLiquidatableInterval: parse(obj.processLiquidatableInterval, defaultTimeUnit),
-    heartbeatInterval: parse(obj.heartbeatInterval, defaultTimeUnit),
-    heartbeatTimeout: parse(obj.heartbeatTimeout, defaultTimeUnit),
-    clientKeepAliveTimeout: parse(obj.clientKeepAliveTimeout, defaultTimeUnit),
-    sanityCheckInterval: parse(obj.sanityCheckInterval, defaultTimeUnit),
-    reconnectDelay: parse(obj.reconnectDelay, defaultTimeUnit),
-    reconnectMaxAttemmpts: obj.reconnectMaxAttemmpts,
-    errorThreshold: obj.errorThreshold,
-    restartTimeout: parse(obj.restartTimeout, defaultTimeUnit),
+    chainConfigs: config.chainConfigs,
+    multicallAddress: config.multicallAddress,
+    createAccountTopicID: config.createAccountTopicID,
+    initialDeploy: config.initialDeploy,
+    pollingInterval: parseDuration(config.pollingInterval),
+    processLiquidatableInterval: parseDuration(config.processLiquidatableInterval),
+    heartbeatInterval: parseDuration(config.heartbeatInterval),
+    heartbeatTimeout: parseDuration(config.heartbeatTimeout),
+    clientKeepAliveTimeout: parseDuration(config.clientKeepAliveTimeout),
+    sanityCheckInterval: parseDuration(config.sanityCheckInterval),
+    reconnectDelay: parseDuration(config.reconnectDelay),
+    reconnectMaxAttemmpts: config.reconnectMaxAttemmpts,
+    errorThreshold: config.errorThreshold,
+    restartTimeout: parseDuration(config.restartTimeout),
   };
 }
 
-function isValidChainConfig(chainConfig: aloeChainConfig) {
+function parseDuration(duration: string): number {
+  const result = parse(duration, DEFAULT_TIME_UNIT);
+  if (result !== undefined && result !== null) {
+    return result;
+  }
+  throw new Error(`Invalid duration provided: ${duration}`);
+}
+
+function isValidChainConfig(chainConfig: AloeChainConfig) {
   return isAddress(chainConfig.factory) && isAddress(chainConfig.borrower) && isAddress(chainConfig.borrowerLens);
 }
 
@@ -90,7 +102,7 @@ function isValid<T>(fieldName: string, condition: ConditionFunc<T>) {
   };
 }
 
-function isValidConfig(config: Config): boolean {
+export default function isValidConfig(config: Config): boolean {
   for (const chainConfig of config.chainConfigs) {
     if (!isValidChainConfig(chainConfig)) {
       return false;
