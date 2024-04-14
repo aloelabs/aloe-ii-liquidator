@@ -10,15 +10,36 @@ import {
 import { aloeChains } from "./Constants";
 import { setupViemFor } from "./Contracts";
 import { borrowerAbi } from "./abis/Borrower";
+import * as Sentry from "@sentry/node";
 
 const chainId = Number(process.argv[process.argv.indexOf("--chain") + 1]);
 const chain = extractChain({
   chains: aloeChains,
   id: chainId as 1 | 10 | 8453 | 42161,
 });
+
+if (
+  process.env.SENTRY_DSN0 !== undefined &&
+  process.env.SENTRY_DSN1 !== undefined &&
+  process.env.SENTRY_DSN2 !== undefined
+) {
+  console.log("Configuring Sentry for Liquidator");
+  Sentry.init({
+    dsn: `https://${process.env.SENTRY_DSN0}@${process.env.SENTRY_DSN1}.ingest.sentry.io/${process.env.SENTRY_DSN2}`,
+    sampleRate: 0.1,
+    enabled:
+      process.env.SENTRY_DSN0 !== undefined &&
+      process.env.SENTRY_DSN1 !== undefined &&
+      process.env.SENTRY_DSN2 !== undefined,
+    autoSessionTracking: false,
+    release: process.env.GIT_COMMIT_SHA || undefined,
+  });
+  Sentry.setTag("chain_name", chain.name);
+}
+
 const { client, factory, borrowerLens, liquidator } = setupViemFor(
   chain,
-  process.env.WALLET_PRIVATE_KEY! as `0x${string}`
+  process.env.WALLET_PRIVATE_KEY as `0x${string}`
 );
 
 const unwatchFns: WatchContractEventReturnType[] = [];
