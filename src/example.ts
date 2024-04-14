@@ -81,12 +81,11 @@ client.public.watchEvent({
     logs.forEach((log) => {
       // NOTE: `strict: true` above means that ! operator is okay
       const caller = log.args.caller!;
-      if (borrowers.has(caller)) {
+      if (borrowers.has(caller) && !borrowers.get(caller)!.hasBorrows) {
         console.log(caller, "started borrowing");
         borrowers.get(caller)!.hasBorrows = true;
       }
     });
-    console.log(logs);
   },
 });
 
@@ -161,7 +160,7 @@ unwatchFns.push(
                 client.wallet.account.address,
               ]
             );
-            const hash = liquidator.write.liquidate([
+            const hash = await liquidator.write.liquidate([
               borrower.address,
               data,
               10000n,
