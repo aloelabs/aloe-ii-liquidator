@@ -19,7 +19,7 @@
     "clean": "rm -rf lib"
   },
   "dependencies": {
-    "@sentry/node": "^7.48.0",
+    "@sentry/node": "^7.110.0",
     "@types/node": "^20.12.5",
     "axios": "^0.25.0",
     "bottleneck": "^2.19.5",

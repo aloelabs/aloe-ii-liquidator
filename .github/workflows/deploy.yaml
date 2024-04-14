@@ -3,14 +3,15 @@ on:
   push:
     branches:
       - main
+      - temporary
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Setup Node.js
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v4
         with:
           node-version: 20
       - name: Install dependencies
@@ -18,7 +19,7 @@ jobs:
       - name: Build
         run: yarn build
       - name: Create Sentry release
-        uses: getsentry/action-release@v1
+        uses: getsentry/action-release@v1.7.0
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
@@ -27,3 +28,4 @@ jobs:
           environment: production
           version: ${{ github.sha }}
           sourcemaps: '/lib'
+          ignore_missing: true
