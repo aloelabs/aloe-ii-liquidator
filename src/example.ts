@@ -26,12 +26,11 @@ if (
   console.log("Configuring Sentry for Liquidator");
   Sentry.init({
     dsn: `https://${process.env.SENTRY_DSN0}@${process.env.SENTRY_DSN1}.ingest.sentry.io/${process.env.SENTRY_DSN2}`,
-    sampleRate: 0.1,
-    tracesSampleRate: 1,
     enabled:
       process.env.SENTRY_DSN0 !== undefined &&
       process.env.SENTRY_DSN1 !== undefined &&
       process.env.SENTRY_DSN2 !== undefined,
+    tracesSampleRate: 0.1,
     release: process.env.GIT_COMMIT_SHA || undefined,
     initialScope: { tags: { "chain_name": chain.name } },
   });
