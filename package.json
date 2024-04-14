@@ -14,7 +14,8 @@
   "scripts": {
     "build": "tsc",
     "gcp-build": "tsc",
-    "start": "tsc && node lib/example.js --chain 10",
+    "start-optimism": "tsc && node lib/example.js --chain 10",
+    "start": "tsc && node lib/index.js",
     "clean": "rm -rf lib"
   },
   "dependencies": {

@@ -1,8 +1,5 @@
 import {
   Chain,
-  PublicClient,
-  WalletClient,
-  WatchContractEventReturnType,
   createPublicClient,
   createWalletClient,
   getContract,
@@ -32,7 +29,7 @@ function alchemyWssUrlFor(chain: Chain) {
 }
 
 export function setupViemFor(chain: Chain, privateKey: `0x${string}`) {
-  const publicClient: PublicClient = createPublicClient({
+  const publicClient = createPublicClient({
     batch: {
       multicall: {
         batchSize: 1024,
@@ -45,7 +42,7 @@ export function setupViemFor(chain: Chain, privateKey: `0x${string}`) {
     transport: webSocket(alchemyWssUrlFor(chain), { retryCount: 60 }),
   });
 
-  const walletClient: WalletClient = createWalletClient({
+  const walletClient = createWalletClient({
     cacheTime: 4_000,
     pollingInterval: 10_000,
     chain,
