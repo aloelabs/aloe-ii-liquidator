@@ -50,7 +50,7 @@ let borrowers = new Map<Address, Borrower>();
 factory.getEvents
   .CreateBorrower({ pool: undefined }, { strict: true, fromBlock: 0n })
   .then((createBorrowerEvents) => {
-    console.log(`Found ${createBorrowerEvents.length} existing borrowers`);
+    console.log(chain.name, `Found ${createBorrowerEvents.length} existing borrowers`);
     // NOTE: `strict: true` above means that ! operator is okay
     createBorrowerEvents.forEach((ev) =>
       borrowers.set(ev.args.account!, {
@@ -70,7 +70,7 @@ unwatchFns.push(
       poll: true,
       pollingInterval: 10_000,
       async onLogs(logs) {
-        console.log(`Tracking ${logs.length} new borrowers`);
+        console.log(chain.name, `Tracking ${logs.length} new borrowers`);
         // NOTE: `strict: true` above means that ! operator is okay
         new Set(logs.map((log) => log.args.account!)).forEach((account) => {
           borrowers.set(account, {
@@ -102,7 +102,7 @@ client.public.watchEvent({
       // NOTE: `strict: true` above means that ! operator is okay
       const caller = log.args.caller!;
       if (borrowers.has(caller) && !borrowers.get(caller)!.hasBorrows) {
-        console.log(caller, "started borrowing");
+        console.log(chain.name, caller, "started borrowing");
         borrowers.get(caller)!.hasBorrows = true;
       }
     });
@@ -113,7 +113,7 @@ client.public.watchEvent({
 unwatchFns.push(
   client.public.watchBlockNumber({
     onBlockNumber(blockNumber) {
-      console.log(`Saw block ${blockNumber}`);
+      console.log(chain.name, `Saw block ${blockNumber}`);
 
       borrowers.forEach(async (borrower) => {
         if (!borrower.hasBorrows) return;
@@ -126,11 +126,11 @@ unwatchFns.push(
           const health = healthA < healthB ? healthA : healthB;
 
           if (health === 1000000000000000000000n) {
-            console.log(borrower.address, health, "(no borrows)");
+            console.log(chain.name, borrower.address, health, "(no borrows)");
             borrower.hasBorrows = false;
             return;
           }
-          console.log(borrower.address, health);
+          console.log(chain.name, borrower.address, health);
 
           const [canWarn, [canLiquidate, auctionTime]] = await Promise.all([
             liquidator.read.canWarn([borrower.address]),
@@ -144,14 +144,15 @@ unwatchFns.push(
           });
 
           if (canWarn) {
-            console.log(borrower.address, "unhealthy; warning now");
-            const hash = await borrowerContract.write.warn([0xffffffff]);
+            console.log(chain.name, borrower.address, "unhealthy, calling warn");
+            const hash = await borrowerContract.write.warn([0x100000000]);
             console.log(`--> ${hash}`);
             return;
           }
 
           if (canLiquidate && auctionTime < 5 * 60) {
             console.log(
+              chain.name,
               borrower.address,
               "auction started; will liquidate 5 minutes in"
             );
@@ -159,7 +160,7 @@ unwatchFns.push(
           }
 
           if (canLiquidate) {
-            console.log(borrower.address, "liquidating now");
+            console.log(chain.name, borrower.address, "calling liquidate");
             const [pool, token0, token1, lender0, lender1] = await Promise.all([
               borrowerContract.read.UNISWAP_POOL(),
               borrowerContract.read.TOKEN0(),
@@ -184,7 +185,7 @@ unwatchFns.push(
               borrower.address,
               data,
               10000n,
-              0xffffffff,
+              0x100000000,
             ]);
             console.log(`--> ${hash}`);
             return;
