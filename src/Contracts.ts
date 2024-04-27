@@ -2,10 +2,13 @@ import {
   Chain,
   createPublicClient,
   createWalletClient,
+  fallback,
   getContract,
+  http,
   webSocket,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { arbitrum, base, mainnet, optimism, linea, scroll } from "viem/chains";
 
 import { factoryAbi } from "./abis/Factory";
 import {
@@ -28,7 +31,43 @@ function alchemyWssUrlFor(chain: Chain) {
   return `wss://${prefix}.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`;
 }
 
+function getTransportFor(chain: Chain) {
+  const config = {
+    batch: true,
+    retryCount: 5,
+    retryDelay: 1000,
+  };
+  if (chain.id === linea.id) {
+    return fallback(
+      [
+        http("https://rpc.linea.build", config),
+        http("https://linea.decubate.com", config),
+        http("https://linea.drpc.org", config),
+      ],
+      {
+        retryCount: 5,
+        retryDelay: 1000,
+      }
+    );
+  }
+  if (chain.id === scroll.id) {
+    return fallback(
+      [
+        http("https://scroll.drpc.org", config),
+        http("https://1rpc.io/scroll", config),
+        http("https://rpc.ankr.com/scroll", config),
+      ],
+      {
+        retryCount: 5,
+        retryDelay: 1000,
+      }
+    );
+  }
+  return webSocket(alchemyWssUrlFor(chain), { retryCount: 60 });
+}
+
 export function setupViemFor(chain: Chain, privateKey: `0x${string}`) {
+  const transport = getTransportFor(chain);
   const publicClient = createPublicClient({
     batch: {
       multicall: {
@@ -39,7 +78,7 @@ export function setupViemFor(chain: Chain, privateKey: `0x${string}`) {
     cacheTime: 4_000,
     pollingInterval: 10_000,
     chain,
-    transport: webSocket(alchemyWssUrlFor(chain), { retryCount: 60 }),
+    transport,
   });
 
   const walletClient = createWalletClient({
@@ -47,7 +86,7 @@ export function setupViemFor(chain: Chain, privateKey: `0x${string}`) {
     pollingInterval: 10_000,
     chain,
     account: privateKeyToAccount(privateKey),
-    transport: webSocket(alchemyWssUrlFor(chain), { retryCount: 60 }),
+    transport,
   });
 
   const client = {

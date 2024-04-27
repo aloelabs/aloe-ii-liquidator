@@ -15,7 +15,7 @@ import * as Sentry from "@sentry/node";
 const chainId = Number(process.argv[process.argv.indexOf("--chain") + 1]);
 const chain = extractChain({
   chains: aloeChains,
-  id: chainId as 1 | 10 | 8453 | 42161,
+  id: chainId as 1 | 10 | 8453 | 42161 | 59144 | 534352,
 });
 
 if (
