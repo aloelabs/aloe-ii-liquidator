@@ -64,7 +64,8 @@ app.get("/liquidator_readiness_check", (req, res) => {
 app.use(Sentry.Handlers.errorHandler());
 // Catch 404 and send our own error message (instead of the default Express one)
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-app.use((_req: Request, res: Response, _next: NextFunction) => {
+app.use((req: Request, res: Response, _next: NextFunction) => {
+  console.log(req.ip, req.method, req.path, "Not found");
   res.status(404).send("Not found");
 });
 // Catch all other errors and sennd our own error message (instead of the default Express one)
