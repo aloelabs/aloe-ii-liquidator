@@ -1,8 +1,11 @@
 import { fork } from "child_process";
+import dotenv from "dotenv";
 import express, { NextFunction, Request, Response } from "express";
 import * as Sentry from "@sentry/node";
 import { arbitrum, base, mainnet, optimism, linea, scroll } from "viem/chains";
 import helmet from "helmet";
+
+dotenv.config();
 
 const port = process.env.PORT || 8080;
 const app = express();
@@ -36,7 +39,14 @@ app.use(helmet());
 app.disable("x-powered-by");
 app.set("trust proxy", true);
 
-const chains = [mainnet.id, optimism.id, arbitrum.id, base.id, linea.id, scroll.id];
+const chains = [
+  mainnet.id,
+  optimism.id,
+  arbitrum.id,
+  base.id,
+  linea.id,
+  scroll.id,
+];
 
 chains.forEach((chain) => {
   const child = fork("lib/example.js", ["--chain", chain.toFixed(0)], {});
@@ -46,6 +56,7 @@ chains.forEach((chain) => {
 });
 
 app.get("/liquidator_readiness_check", (req, res) => {
+  console.log("Received readiness check");
   res.send("OK");
 });
 
