@@ -44,8 +44,6 @@ const chains = [
   optimism.id,
   arbitrum.id,
   base.id,
-  linea.id,
-  scroll.id,
 ];
 
 chains.forEach((chain) => {
