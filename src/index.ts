@@ -7,7 +7,7 @@ import helmet from "helmet";
 
 dotenv.config();
 
-const port = process.env.PORT || 8080;
+const port = process.env.PORT || 80;
 const app = express();
 
 console.log("Starting Liquidator");
@@ -56,7 +56,6 @@ chains.forEach((chain) => {
 });
 
 app.get("/liquidator_readiness_check", (req, res) => {
-  console.log("Received readiness check");
   res.send("OK");
 });
 
