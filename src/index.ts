@@ -55,6 +55,10 @@ chains.forEach((chain) => {
   // TODO: handle errors and exits
 });
 
+app.get("/health", (req, res) => {
+  res.send("OK");
+});
+
 app.get("/liquidator_readiness_check", (req, res) => {
   res.send("OK");
 });
