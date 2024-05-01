@@ -30,9 +30,10 @@ if (
       process.env.SENTRY_DSN0 !== undefined &&
       process.env.SENTRY_DSN1 !== undefined &&
       process.env.SENTRY_DSN2 !== undefined,
-    tracesSampleRate: 0.1,
+    tracesSampleRate: 0.02,
+    integrations: [new Sentry.Integrations.Http({ tracing: true })],
     release: process.env.GIT_COMMIT_SHA || undefined,
-    initialScope: { tags: { "chain_name": chain.name } },
+    initialScope: { tags: { chain_name: chain.name } },
   });
 }
 
@@ -50,7 +51,10 @@ let borrowers = new Map<Address, Borrower>();
 factory.getEvents
   .CreateBorrower({ pool: undefined }, { strict: true, fromBlock: 0n })
   .then((createBorrowerEvents) => {
-    console.log(chain.name, `Found ${createBorrowerEvents.length} existing borrowers`);
+    console.log(
+      chain.name,
+      `Found ${createBorrowerEvents.length} existing borrowers`
+    );
     // NOTE: `strict: true` above means that ! operator is okay
     createBorrowerEvents.forEach((ev) =>
       borrowers.set(ev.args.account!, {
@@ -109,96 +113,135 @@ client.public.watchEvent({
   },
 });
 
-// Polling for health, ability to warn and liquidate, etc. (runs every 60 seconds)
-unwatchFns.push(
-  client.public.watchBlockNumber({
-    onBlockNumber(blockNumber) {
-      console.log(chain.name, `Saw block ${blockNumber}`);
+Sentry.startSpan({ name: "Liquidator Poll" }, async (span) => {
+  // Polling for health, ability to warn and liquidate, etc. (runs every 60 seconds)
+  unwatchFns.push(
+    client.public.watchBlockNumber({
+      onBlockNumber(blockNumber) {
+        console.log(chain.name, `Saw block ${blockNumber}`);
+        borrowers.forEach(async (borrower) => {
+          await Sentry.startSpan(
+            { name: "Borrower Health Check" },
+            async (childSpan) => {
+              childSpan?.setStatus("ok");
+              if (!borrower.hasBorrows) {
+                return;
+              }
+              childSpan?.setAttribute("borrower", borrower.address);
 
-      borrowers.forEach(async (borrower) => {
-        if (!borrower.hasBorrows) return;
+              try {
+                // NOTE: viem should aggregate these into a multicall behind the scenes
+                const [healthA, healthB] = await borrowerLens.read.getHealth([
+                  borrower.address,
+                ]);
+                const health = healthA < healthB ? healthA : healthB;
+                childSpan?.setAttribute("health", health.toString());
 
-        try {
-          // NOTE: viem should aggregate these into a multicall behind the scenes
-          const [healthA, healthB] = await borrowerLens.read.getHealth([
-            borrower.address,
-          ]);
-          const health = healthA < healthB ? healthA : healthB;
+                if (health === 1000000000000000000000n) {
+                  console.log(
+                    chain.name,
+                    borrower.address,
+                    health,
+                    "(no borrows)"
+                  );
+                  borrower.hasBorrows = false;
+                  return;
+                }
+                console.log(chain.name, borrower.address, health);
 
-          if (health === 1000000000000000000000n) {
-            console.log(chain.name, borrower.address, health, "(no borrows)");
-            borrower.hasBorrows = false;
-            return;
-          }
-          console.log(chain.name, borrower.address, health);
+                const [canWarn, [canLiquidate, auctionTime]] =
+                  await Promise.all([
+                    liquidator.read.canWarn([borrower.address]),
+                    liquidator.read.canLiquidate([borrower.address]),
+                  ]);
 
-          const [canWarn, [canLiquidate, auctionTime]] = await Promise.all([
-            liquidator.read.canWarn([borrower.address]),
-            liquidator.read.canLiquidate([borrower.address]),
-          ]);
+                span?.setAttribute("canWarn", canWarn);
+                span?.setAttribute("canLiquidate", canLiquidate);
+                span?.setAttribute("auctionTime", auctionTime.toString());
 
-          const borrowerContract = getContract({
-            address: borrower.address,
-            abi: borrowerAbi,
-            client,
-          });
+                const borrowerContract = getContract({
+                  address: borrower.address,
+                  abi: borrowerAbi,
+                  client,
+                });
 
-          if (canWarn) {
-            console.log(chain.name, borrower.address, "unhealthy, calling warn");
-            const hash = await borrowerContract.write.warn([0x100000000]);
-            console.log(`--> ${hash}`);
-            return;
-          }
+                if (canWarn) {
+                  console.log(
+                    chain.name,
+                    borrower.address,
+                    "unhealthy, calling warn"
+                  );
+                  const hash = await borrowerContract.write.warn([0x100000000]);
+                  console.log(`--> ${hash}`);
+                  return;
+                }
 
-          if (canLiquidate && auctionTime < 5 * 60) {
-            console.log(
-              chain.name,
-              borrower.address,
-              "auction started; will liquidate 5 minutes in"
-            );
-            return;
-          }
+                if (canLiquidate && auctionTime < 5 * 60) {
+                  console.log(
+                    chain.name,
+                    borrower.address,
+                    "auction started; will liquidate 5 minutes in"
+                  );
+                  return;
+                }
 
-          if (canLiquidate) {
-            console.log(chain.name, borrower.address, "calling liquidate");
-            const [pool, token0, token1, lender0, lender1] = await Promise.all([
-              borrowerContract.read.UNISWAP_POOL(),
-              borrowerContract.read.TOKEN0(),
-              borrowerContract.read.TOKEN1(),
-              borrowerContract.read.LENDER0(),
-              borrowerContract.read.LENDER1(),
-            ]);
-            const data = encodeAbiParameters(
-              parseAbiParameters(
-                "address pool, address token0, address token1, address lender0, address lender1, address caller"
-              ),
-              [
-                pool,
-                token0,
-                token1,
-                lender0,
-                lender1,
-                client.wallet.account.address,
-              ]
-            );
-            const hash = await liquidator.write.liquidate([
-              borrower.address,
-              data,
-              10000n,
-              0x100000000,
-            ]);
-            console.log(`--> ${hash}`);
-            return;
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      });
-    },
-    poll: true,
-    pollingInterval: 60_000,
-  })
-);
+                if (canLiquidate) {
+                  console.log(
+                    chain.name,
+                    borrower.address,
+                    "calling liquidate"
+                  );
+                  const [pool, token0, token1, lender0, lender1] =
+                    await Promise.all([
+                      borrowerContract.read.UNISWAP_POOL(),
+                      borrowerContract.read.TOKEN0(),
+                      borrowerContract.read.TOKEN1(),
+                      borrowerContract.read.LENDER0(),
+                      borrowerContract.read.LENDER1(),
+                    ]);
+                  const data = encodeAbiParameters(
+                    parseAbiParameters(
+                      "address pool, address token0, address token1, address lender0, address lender1, address caller"
+                    ),
+                    [
+                      pool,
+                      token0,
+                      token1,
+                      lender0,
+                      lender1,
+                      client.wallet.account.address,
+                    ]
+                  );
+                  const hash = await liquidator.write.liquidate([
+                    borrower.address,
+                    data,
+                    10000n,
+                    0x100000000,
+                  ]);
+                  console.log(`--> ${hash}`);
+                  return;
+                }
+              } catch (e) {
+                childSpan?.setStatus("unknown_error");
+                Sentry.captureException(e, {
+                  contexts: {
+                    borrower: {
+                      address: borrower.address,
+                      hasBorrows: borrower.hasBorrows,
+                    },
+                  },
+                });
+                console.error(e);
+              }
+            }
+          );
+        });
+      },
+      poll: true,
+      pollingInterval: 60_000,
+    })
+  );
+});
 
 process.on("exit", () => {
   unwatchFns.forEach((unwatchFn) => unwatchFn());
