@@ -1,26 +1,45 @@
-import SlackHook from "./SlackHook";
 
+import * as fs from "fs";
+
+import * as Sentry from "@sentry/node";
+import Bottleneck from "bottleneck";
+import { Command } from 'commander';
 import dotenv from "dotenv";
 import express from "express";
 import winston from "winston";
+
+import { readConfig, isValidConfig } from "./config/config"
 import Liquidator, { PROCESS_LIQUIDATABLE_INTERVAL_MS } from "./Liquidator";
-import Bottleneck from "bottleneck";
-import * as Sentry from "@sentry/node";
+import SlackHook from "./SlackHook";
 
 dotenv.config();
-const OPTIMISM_ALCHEMY_URL = `wss://opt-mainnet.g.alchemy.com/v2/${process.env
-  .ALCHEMY_API_KEY!}`;
-const ARBITRUM_ALCHEMY_URL = `wss://arb-mainnet.g.alchemy.com/v2/${process.env
-  .ALCHEMY_API_KEY!}`;
+
 const BASE_ANKR_URL = `wss://rpc.ankr.com/base/ws/${process.env.ANKR_API_KEY!}`;
 const SLACK_WEBHOOK_URL = `https://hooks.slack.com/services/${process.env.SLACK_WEBHOOK0}/${process.env.SLACK_WEBHOOK1}/${process.env.SLACK_WEBHOOK2}`;
 const port = process.env.PORT || 8080;
 const app = express();
 const STATUS_OK = 200;
 const MS_BETWEEN_REQUESTS = 250;
-const limiter = new Bottleneck({
-  minTime: MS_BETWEEN_REQUESTS,
-});
+const limiter = new Bottleneck({ minTime: MS_BETWEEN_REQUESTS });
+
+const program = new Command();
+
+program
+  .name("Aloe Liquidator")
+  .description("Detects unhealthy borrowers and performs liquidations")
+  .version("2.0.0")
+  .option("-c, --config", "configuration file for the liquidator", '/etc/config.json')
+  .parse(process.argv)
+  
+const pathToConfigJSON: string = program.getOptionValue("config")
+const unparsedConfig = fs.readFileSync(pathToConfigJSON)
+const config = readConfig(unparsedConfig)
+if (config == null) {
+  process.exit(1)
+}
+
+const liquidators = initializeLiquidators(config)
+
 const LIQUIDATOR_ADDRESS = "0xe20fcDBC99fcfaCfEb319CC4536294Bd13d350A4";
 const liquidators: Liquidator[] = [
   new Liquidator(BASE_ANKR_URL, LIQUIDATOR_ADDRESS, limiter),
@@ -86,9 +105,7 @@ if (
   "SLACK_WEBHOOK2" in process.env
 ) {
   transportList.push(
-    new SlackHook(SLACK_WEBHOOK_URL, {
-      level: "info",
-    })
+    new SlackHook(SLACK_WEBHOOK_URL, { level: "info" })
   );
 }
 

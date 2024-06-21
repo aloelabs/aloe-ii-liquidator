@@ -1,10 +1,10 @@
-import Web3 from "web3";
-
 import { config } from "dotenv";
-import { log } from "winston";
+import Web3 from "web3";
+import { Account } from "web3-core";
 import { TransactionConfig, TransactionReceipt } from "web3-eth";
 import { Contract } from "web3-eth-contract";
-import { Account } from "web3-core";
+import { log } from "winston";
+
 import Liquidator from "./Liquidator";
 
 config();
@@ -112,9 +112,7 @@ export default class TXManager {
             const currentNonce = await this.client.eth.getTransactionCount(WALLET_ADDRESS, "pending");
             const estimatedGasLimit: number = await this.liquidatorContract.methods
                 .liquidate(borrower, encodedAddress, liquidationTxInfo.currentStrain)
-                .estimateGas({
-                    gasLimit: Liquidator.GAS_LIMIT,
-                });
+                .estimateGas({ gasLimit: Liquidator.GAS_LIMIT });
             const updatedGasLimit = Math.ceil(estimatedGasLimit * GAS_INCREASE_FACTOR);
             const encodedData = this.liquidatorContract.methods.liquidate(borrower, encodedAddress, liquidationTxInfo.currentStrain).encodeABI();
             const transactionConfig: TransactionConfig = {
@@ -170,7 +168,7 @@ export default class TXManager {
 
     // https://ethereum.stackexchange.com/questions/84545/how-to-get-reason-revert-using-web3-eth-call
     public async getRevertReason(txReceipt: TransactionReceipt): Promise<string> {
-        var result: string = await this.client.eth.call(txReceipt, txReceipt.blockNumber);
+        let result: string = await this.client.eth.call(txReceipt, txReceipt.blockNumber);
 
         result = result.startsWith('0x') ? result : `0x${result}`;
 

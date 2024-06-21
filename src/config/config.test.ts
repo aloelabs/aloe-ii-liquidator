@@ -2,15 +2,18 @@ import { expect, test } from '@jest/globals';
 
 import { readConfig } from './config';
 import { validConfig, invalidValueConfig } from './testConfigs';
+import { optimism } from 'viem/chains';
+import { Address } from 'viem';
 
 test('valid config parsed correctly', () => {
   const parsed = readConfig(validConfig);
   const parsedConfig = {
     chainConfigs: [
       {
-        chainName: 'optimism',
+        // chain: optimism,
+        chainName: "optimism",
         chainNumber: 10,
-        factory: '0x95110C9806833d3D3C250112fac73c5A6f631E80',
+        factory: '0x95110C9806833d3D3C250112fac73c5A6f631E80', 
         borrowerLens: '0x8A15bfEBff7BF9ffaBBeAe49112Dc2E6C4E73Eaf',
         borrower: '0x8A15bfEBff7BF9ffaBBeAe49112Dc2E6C4E73Eaf',
       },
@@ -28,6 +31,7 @@ test('valid config parsed correctly', () => {
     reconnectMaxAttemmpts: 5,
     errorThreshold: 5,
     restartTimeout: 259200000,
+    timeToWaitBeforeLiquidation: 600000,
   };
   expect(parsed).toEqual(parsedConfig);
 });

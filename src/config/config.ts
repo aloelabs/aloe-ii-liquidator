@@ -1,5 +1,6 @@
 import parse from 'parse-duration';
 import Web3 from 'web3';
+import { Address } from 'viem';
 
 export type BaseConfig = {
   chainConfigs: AloeChainConfig[];
@@ -10,7 +11,7 @@ export type BaseConfig = {
   errorThreshold: number;
 };
 
-type AloeChainConfig = {
+export type AloeChainConfig = {
   chainName: string;
   chainNumber: number;
   factory: Address;
@@ -19,6 +20,7 @@ type AloeChainConfig = {
 };
 
 type NumericalFieldsAs<T> = {
+  timeToWaitBeforeLiquidation: T;
   pollingInterval: T;
   processLiquidatableInterval: T;
   heartbeatInterval: T;
@@ -30,9 +32,8 @@ type NumericalFieldsAs<T> = {
 };
 
 type UnparsedConfig = BaseConfig & NumericalFieldsAs<string>;
-type Config = BaseConfig & NumericalFieldsAs<number | undefined>;
+export type Config = BaseConfig & NumericalFieldsAs<number | undefined>;
 
-type Address = string;
 type ConditionFunc<T> = (input: T) => boolean;
 
 const DEFAULT_TIME_UNIT = 'millisecond';
@@ -67,6 +68,7 @@ function parseConfig(config: UnparsedConfig): Config {
     multicallAddress: config.multicallAddress,
     createAccountTopicID: config.createAccountTopicID,
     initialDeploy: config.initialDeploy,
+    timeToWaitBeforeLiquidation: parseDuration(config.timeToWaitBeforeLiquidation),
     pollingInterval: parseDuration(config.pollingInterval),
     processLiquidatableInterval: parseDuration(config.processLiquidatableInterval),
     heartbeatInterval: parseDuration(config.heartbeatInterval),
@@ -131,6 +133,7 @@ export default function isValidConfig(config: Config): boolean {
     [config.reconnectMaxAttemmpts, isValid('reconnectMaxAttempts', greaterThanOrEqualToZero)],
     [config.errorThreshold, isValid('errorThreshold', greaterThanZero)],
     [config.restartTimeout, isValid('restartTimeout', greaterThanOrEqualToZero)],
+    [config.timeToWaitBeforeLiquidation, isValid('timeToWaitBeforeLiquidation', greaterThanZero)]
   ]);
 
   for (const [field, validator] of numericFieldsToValidators) {
