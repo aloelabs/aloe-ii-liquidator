@@ -11,9 +11,9 @@ test('valid config parsed correctly', () => {
     chainConfigs: [
       {
         // chain: optimism,
-        chainName: "optimism",
+        chainName: 'optimism',
         chainNumber: 10,
-        factory: '0x95110C9806833d3D3C250112fac73c5A6f631E80', 
+        factory: '0x95110C9806833d3D3C250112fac73c5A6f631E80',
         borrowerLens: '0x8A15bfEBff7BF9ffaBBeAe49112Dc2E6C4E73Eaf',
         borrower: '0x8A15bfEBff7BF9ffaBBeAe49112Dc2E6C4E73Eaf',
       },

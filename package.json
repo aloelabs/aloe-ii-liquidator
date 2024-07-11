@@ -27,8 +27,8 @@
     "clean": "rm -rf lib",
     "test": "yarn node --experimental-vm-modules $(yarn bin jest)",
     "lint": "eslint --fix --ext .ts .",
-    "prettier": "prettier --write src/**/*.{ts,json}",
-    "prettier:check": "prettier --check 'src/**/*.{ts,json}'",
+    "prettier": "prettier --write 'src/*.ts' src/**/*.{ts,json}",
+    "prettier:check": "prettier --check 'src/*.ts' 'src/**/*.{ts,json}'",
     "prepare": "husky install"
   },
   "husky": {

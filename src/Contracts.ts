@@ -19,9 +19,7 @@ import { factoryAbi } from './abis/Factory';
 import { borrowerLensAbi } from './abis/BorrowerLens';
 import { erc20Abi } from './abis/ERC20';
 
-import {
-  CHAIN_ID_TO_ALCHEMY_URL_PREFIX,
-} from './Constants';
+import { CHAIN_ID_TO_ALCHEMY_URL_PREFIX } from './Constants';
 import 'dotenv/config';
 
 import { AloeChainConfig } from './config/config';
@@ -92,7 +90,7 @@ export function getBorrowerContract(borrower: `0x${string}`, client: PublicClien
     address: borrower,
     abi: borrowerAbi,
     client: client,
-  })
+  });
 }
 
 export function getERC20Contract(token: `0x${string}`, client: PublicClient) {
@@ -100,7 +98,7 @@ export function getERC20Contract(token: `0x${string}`, client: PublicClient) {
     address: token,
     abi: erc20Abi,
     client: client,
-  })
+  });
 }
 
 export function setupViemTestClient(factoryAddress: `0x${string}`, borrowerLensAddress: `0x${string}`) {
@@ -108,7 +106,9 @@ export function setupViemTestClient(factoryAddress: `0x${string}`, borrowerLensA
     chain: foundry,
     mode: 'anvil',
     transport: http(),
-  }).extend(publicActions).extend(walletActions);
+  })
+    .extend(publicActions)
+    .extend(walletActions);
 
   const factory = getContract({
     address: factoryAddress,

@@ -1,16 +1,15 @@
+import * as fs from 'fs';
 
-import * as fs from "fs";
-
-import * as Sentry from "@sentry/node";
-import Bottleneck from "bottleneck";
+import * as Sentry from '@sentry/node';
+import Bottleneck from 'bottleneck';
 import { Command } from 'commander';
-import dotenv from "dotenv";
-import express from "express";
-import winston from "winston";
+import dotenv from 'dotenv';
+import express from 'express';
+import winston from 'winston';
 
-import { readConfig, isValidConfig } from "./config/config"
-import Liquidator, { PROCESS_LIQUIDATABLE_INTERVAL_MS } from "./Liquidator";
-import SlackHook from "./SlackHook";
+import { readConfig, isValidConfig } from './config/config';
+import Liquidator, { PROCESS_LIQUIDATABLE_INTERVAL_MS } from './Liquidator';
+import SlackHook from './SlackHook';
 
 dotenv.config();
 
@@ -25,22 +24,22 @@ const limiter = new Bottleneck({ minTime: MS_BETWEEN_REQUESTS });
 const program = new Command();
 
 program
-  .name("Aloe Liquidator")
-  .description("Detects unhealthy borrowers and performs liquidations")
-  .version("2.0.0")
-  .option("-c, --config", "configuration file for the liquidator", '/etc/config.json')
-  .parse(process.argv)
-  
-const pathToConfigJSON: string = program.getOptionValue("config")
-const unparsedConfig = fs.readFileSync(pathToConfigJSON)
-const config = readConfig(unparsedConfig)
+  .name('Aloe Liquidator')
+  .description('Detects unhealthy borrowers and performs liquidations')
+  .version('2.0.0')
+  .option('-c, --config', 'configuration file for the liquidator', '/etc/config.json')
+  .parse(process.argv);
+
+const pathToConfigJSON: string = program.getOptionValue('config');
+const unparsedConfig = fs.readFileSync(pathToConfigJSON);
+const config = readConfig(unparsedConfig);
 if (config == null) {
-  process.exit(1)
+  process.exit(1);
 }
 
-const liquidators = initializeLiquidators(config)
+const liquidators = initializeLiquidators(config);
 
-const LIQUIDATOR_ADDRESS = "0xe20fcDBC99fcfaCfEb319CC4536294Bd13d350A4";
+const LIQUIDATOR_ADDRESS = '0xe20fcDBC99fcfaCfEb319CC4536294Bd13d350A4';
 const liquidators: Liquidator[] = [
   new Liquidator(BASE_ANKR_URL, LIQUIDATOR_ADDRESS, limiter),
   new Liquidator(OPTIMISM_ALCHEMY_URL, LIQUIDATOR_ADDRESS, limiter),
@@ -64,63 +63,51 @@ if (
   });
 }
 
-app.get("/liquidator_liveness_check", (req, res) => {
-  res.status(STATUS_OK).send({ status: "ok" });
+app.get('/liquidator_liveness_check', (req, res) => {
+  res.status(STATUS_OK).send({ status: 'ok' });
 });
 
-app.get("/liquidator_readiness_check", async (req, res) => {
+app.get('/liquidator_readiness_check', async (req, res) => {
   const results = await Promise.all(
     liquidators.map(async (liquidator) => {
       return liquidator.isHealthy();
     })
   );
-  const unHealthyLiquidator = results.find(
-    (result) => result.code !== STATUS_OK
-  );
+  const unHealthyLiquidator = results.find((result) => result.code !== STATUS_OK);
   if (unHealthyLiquidator !== undefined) {
     return res.status(unHealthyLiquidator.code).send(unHealthyLiquidator);
   } else {
     const uptime = process.uptime();
     const responsetime = process.hrtime();
-    return res.status(STATUS_OK).send({ status: "ok", uptime, responsetime });
+    return res.status(STATUS_OK).send({ status: 'ok', uptime, responsetime });
   }
 });
 
 const transportList: winston.transport[] = [
   new winston.transports.Console({
-    level: "debug",
+    level: 'debug',
     handleExceptions: true,
   }),
   new winston.transports.File({
-    level: "debug",
-    filename: "liquidation-bot-debug.log",
+    level: 'debug',
+    filename: 'liquidation-bot-debug.log',
     maxFiles: 1,
     maxsize: 100000,
   }),
 ];
 
-if (
-  "SLACK_WEBHOOK0" in process.env &&
-  "SLACK_WEBHOOK1" in process.env &&
-  "SLACK_WEBHOOK2" in process.env
-) {
-  transportList.push(
-    new SlackHook(SLACK_WEBHOOK_URL, { level: "info" })
-  );
+if ('SLACK_WEBHOOK0' in process.env && 'SLACK_WEBHOOK1' in process.env && 'SLACK_WEBHOOK2' in process.env) {
+  transportList.push(new SlackHook(SLACK_WEBHOOK_URL, { level: 'info' }));
 }
 
 winston.configure({
-  format: winston.format.combine(
-    winston.format.splat(),
-    winston.format.simple()
-  ),
+  format: winston.format.combine(winston.format.splat(), winston.format.simple()),
   transports: transportList,
   exitOnError: false,
 });
 
 async function start() {
-  const delayBetweenStarts =
-    PROCESS_LIQUIDATABLE_INTERVAL_MS / liquidators.length;
+  const delayBetweenStarts = PROCESS_LIQUIDATABLE_INTERVAL_MS / liquidators.length;
   for (const liquidator of liquidators) {
     liquidator.start();
     // We want to stagger the start of each liquidator so that we can spread
@@ -135,22 +122,22 @@ const server = app.listen(port, () => {
   console.log(`Liquidation bot listening on port ${port}`);
 });
 
-process.on("SIGINT", () => {
-  console.log("Caught a SIGINT signal");
+process.on('SIGINT', () => {
+  console.log('Caught a SIGINT signal');
   liquidators.forEach((liquidator) => {
     liquidator.stop();
   });
   server.close();
-  console.log("Exiting...");
+  console.log('Exiting...');
   process.exit(0);
 });
 
-process.on("SIGTERM", () => {
-  console.log("Caught a terminate signal");
+process.on('SIGTERM', () => {
+  console.log('Caught a terminate signal');
   liquidators.forEach((liquidator) => {
     liquidator.stop();
   });
   server.close();
-  console.log("Exiting...");
+  console.log('Exiting...');
   process.exit(0);
 });

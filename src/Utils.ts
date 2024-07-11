@@ -1,9 +1,6 @@
-import axios from "axios";
+import axios from 'axios';
 
-export async function withTimeout<T>(
-  promise: Promise<T>,
-  ms: number
-): Promise<T> {
+export async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) => {
@@ -25,7 +22,7 @@ export function getLogsBaseScan(
 ) {
   let query = `https://api.basescan.org/api?module=logs&action=getLogs`.concat(
     `&fromBlock=${fromBlock.toFixed(0)}`,
-    toBlock ? `&toBlock=${toBlock.toFixed(0)}` : "&toBlock=latest",
+    toBlock ? `&toBlock=${toBlock.toFixed(0)}` : '&toBlock=latest',
     `&address=${address}`
   );
 
@@ -34,13 +31,12 @@ export function getLogsBaseScan(
     query += `&topic${i}=${topics[i]}`;
 
     if (i === topics.length - 1) break;
-    query += `&topic${i}_${i + 1}_opr=${shouldMatchAll ? "and" : "or"}`;
+    query += `&topic${i}_${i + 1}_opr=${shouldMatchAll ? 'and' : 'or'}`;
   }
 
   if (page) query += `&page=${page}`;
   query += `&offset=${pageLength}`;
-  if (process.env.BASESCAN_API_KEY)
-    query += `&apikey=${process.env.BASESCAN_API_KEY}`;
+  if (process.env.BASESCAN_API_KEY) query += `&apikey=${process.env.BASESCAN_API_KEY}`;
 
   return axios.get(query);
 }

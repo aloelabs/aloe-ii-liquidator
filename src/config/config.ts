@@ -133,7 +133,7 @@ export default function isValidConfig(config: Config): boolean {
     [config.reconnectMaxAttemmpts, isValid('reconnectMaxAttempts', greaterThanOrEqualToZero)],
     [config.errorThreshold, isValid('errorThreshold', greaterThanZero)],
     [config.restartTimeout, isValid('restartTimeout', greaterThanOrEqualToZero)],
-    [config.timeToWaitBeforeLiquidation, isValid('timeToWaitBeforeLiquidation', greaterThanZero)]
+    [config.timeToWaitBeforeLiquidation, isValid('timeToWaitBeforeLiquidation', greaterThanZero)],
   ]);
 
   for (const [field, validator] of numericFieldsToValidators) {
