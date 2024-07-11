@@ -21,6 +21,8 @@
         "ExportDeclaration": { "multiline": true },
       },
     ],
+    "no-unused-vars": "warn",
+    "@typescript-eslint/no-unused-vars": "warn",
     "object-curly-spacing": ["error", "always"],
     "eqeqeq": ["warn", "smart"],
     "no-return-await": "warn",

@@ -1,15 +1,11 @@
 import { describe, expect, test } from '@jest/globals';
 
 import {
-  createTestClient,
-  http,
-  publicActions,
-  walletActions,
   encodeFunctionData,
-  PublicClient,
-  GetContractReturnType,
   parseEther,
-  zeroAddress,
+  getContract,
+  toHex,
+  Hex,
 } from 'viem';
 import { foundry, optimism } from 'viem/chains';
 import { createAnvil } from '@viem/anvil';
@@ -17,12 +13,14 @@ import { getBorrowerContract, getERC20Contract, setupViemTestClient } from './Co
 import { getBorrowers, getSlot0, canWarn } from './Liquidator';
 import { borrowerAbi } from './abis/Borrower';
 import { borrowerLensAbi } from './abis/BorrowerLens';
+import { lenderAbi } from './abis/Lender';
 
 const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY;
+const FORK_BLOCK_NUMBER = 119812542n;
 
 const anvil = createAnvil({
-  forkUrl: 'https://opt-mainnet.g.alchemy.com/v2/yQdMiWQFPhgEk9AoQ72DZMbmX8vBT81U',
-  forkBlockNumber: 119812542n,
+  forkUrl: `https://opt-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+  forkBlockNumber: FORK_BLOCK_NUMBER,
   startTimeout: 50_000,
 });
 
@@ -70,32 +68,34 @@ test('making a borrower unhealthy', async () => {
     '0x000000009efdB26b970bCc0085E126C9dfc16ee8',
     '0xF8686eafF7106Fa6b6337b4FB767557E73299Aa0'
   );
+  const args = { blockNumber: FORK_BLOCK_NUMBER };
   // Note: if you pass 0n for blockNumber to getBorrowers, you get borrowers that are not in use
-  const borrowers = await getBorrowers(factory, 117037797n);
-  const borrowersWithoutUniswapPositions = borrowers.filter(async (borrower) => {
-    const uniswapPositions = await borrowerLens.read.getUniswapPositions([borrower]);
-    return uniswapPositions[0].length == 0;
-  });
+  // const borrowers = await getBorrowers(factory, 117037797n);
+  // const borrowersWithoutUniswapPositions = borrowers.filter(async (borrower) => {
+  //   const uniswapPositions = await borrowerLens.read.getUniswapPositions([borrower]);
+  //   return uniswapPositions[0].length == 0;
+  // });
   const simpleManagerAddress: `0x${string}` = `0xBb5A35B80b15A8E5933fDC11646A20f6159Dd061`;
   // const randomIndex = Math.floor(Math.random()*borrowersWithoutUniswapPositions.length)
   // const borrower = borrowersWithoutUniswapPositions[randomIndex]
   const borrower = '0x9b8D2F8D2f26BEE169CfEFB7505b7d242a91c756';
-  console.log('borrower', borrower);
   // const borrower = `0xCD9f48a37922812D0CC610dB019Fbc09117142da`
 
+  console.log('Borrower to target:', borrower);
+
   const borrowerContract = getBorrowerContract(borrower, client);
-  const owner = await borrowerContract.read.owner();
-  const token0 = await borrowerContract.read.TOKEN0();
-  const token1 = await borrowerContract.read.TOKEN1();
-  const liabilities = await borrowerContract.read.getLiabilities();
+  const owner = await borrowerContract.read.owner(args);
+  const token0 = await borrowerContract.read.TOKEN0(args);
+  const token1 = await borrowerContract.read.TOKEN1(args);
+  const liabilities = await borrowerContract.read.getLiabilities(args);
 
   const erc20Token0Contract = getERC20Contract(token0, client);
   const erc20Token1Contract = getERC20Contract(token1, client);
 
-  const balanceToken0 = await erc20Token0Contract.read.balanceOf([borrower]);
-  const balanceToken1 = await erc20Token1Contract.read.balanceOf([borrower]);
+  const balanceToken0 = await erc20Token0Contract.read.balanceOf([borrower], args);
+  const balanceToken1 = await erc20Token1Contract.read.balanceOf([borrower], args);
 
-  const prices = await borrowerContract.read.getPrices([1 << 32]);
+  const prices = await borrowerContract.read.getPrices([1 << 32], args);
   const currentSqrtPrice = prices[0].c;
   const borrowAmount1 = computeLiquidatableBorrowerAmountToken1(
     balanceToken0,
@@ -104,8 +104,16 @@ test('making a borrower unhealthy', async () => {
     liabilities[1],
     currentSqrtPrice
   );
-  console.log('before currentSqrtPrice', currentSqrtPrice);
-  console.log(borrowAmount1);
+
+  const healthDivisor = 1000000000n;
+  let healthA: bigint, healthB: bigint;
+  [healthA, healthB] = await borrowerLens.read.getHealth([borrower], args);
+
+  console.log('Pre-transaction state');
+  console.log('\tblock number:', await client.getBlockNumber());
+  console.log('\tcurrent sqrtPrice:', currentSqrtPrice);
+  console.log('\testimated borrow amount to become unhealthy:', borrowAmount1);
+  console.log('\thealthA', Number(healthA / healthDivisor) / 1e9, 'healthB', Number(healthB / healthDivisor) / 1e9);
 
   // Need to get the hashed contract code
   const borrowEncodedData = encodeFunctionData({
@@ -120,15 +128,6 @@ test('making a borrower unhealthy', async () => {
     functionName: 'modify',
     args: [simpleManagerAddress, borrowEncodedData, Q32],
   });
-
-  const [healthABefore, healthBBefore] = await borrowerLens.read.getHealth([borrower]);
-  const healthDivisor = 100000000000000n;
-  console.log(
-    'healthA before',
-    Number(healthABefore / healthDivisor) / 1e4,
-    'healthB before',
-    Number(healthBBefore / healthDivisor) / 1e4
-  );
 
   await client.impersonateAccount({
     // Impersonate the borrower's owner
@@ -146,42 +145,47 @@ test('making a borrower unhealthy', async () => {
     to: borrower,
     data: modifyEncodedData,
   });
+  const transaction = await client.getTransactionReceipt({ hash });
+
+  console.log('\n\n------- RECEIPT -------');
+  console.log(transaction);
+  console.log('-----------------------\n\n');
 
   await client.stopImpersonatingAccount({
     address: owner,
   });
 
-  await client.mine({
-    blocks: 1,
-  });
-  const block = await client.getBlock({
-    blockNumber: 119812542n,
-  });
+  args.blockNumber += 1n;
 
-  console.log('block', block);
+  console.log('Post-transaction state');
+  [healthA, healthB] = await borrowerLens.read.getHealth([borrower], args);
+  console.log('\thealthA', Number(healthA / healthDivisor) / 1e9, 'healthB', Number(healthB / healthDivisor) / 1e9);
 
-  await client.setNextBlockTimestamp({
-    timestamp: 1746752690n,
-  });
+  // Now we manually increase borrowIndex to mock interest accrual and make the borrower unhealthy
+  const lender1 = await borrowerContract.read.LENDER1(args);
+  const lender1Contract = getContract({ address: lender1, abi: lenderAbi, client });
 
-  await client.mine({
-    blocks: 1,
-  });
+  const borrowIndex = await lender1Contract.read.borrowIndex(args);
+  const borrowIndexUpdated = (borrowIndex * 102n) / 100n; // mock interest accrual of +2%
 
-  const transaction = await client.getTransactionReceipt({
-    hash: hash,
-  });
+  const slot1 = BigInt((await client.getStorageAt({ address: lender1, slot: toHex(1) })) as Hex);
+  const slot1Updated = (slot1 % (1n << 184n)) + (borrowIndexUpdated << 184n);
 
-  const newPrices = await borrowerContract.read.getPrices([1 << 32]);
-  const newCurrentSqrtPrice = newPrices[0].c;
+  const slot1Hex = `0x${slot1.toString(16).padStart(64, '0')}` as Hex;
+  const slot1HexUpdated = `0x${slot1Updated.toString(16).padStart(64, '0')}` as Hex;
+  await client.setStorageAt({ address: lender1, index: toHex(1), value: slot1HexUpdated });
 
-  console.log('newPrices', newCurrentSqrtPrice);
+  const borrowIndexVerified = await lender1Contract.read.borrowIndex(args);
 
-  console.log(transaction);
+  console.log('\nMOCKING INTEREST ACCRUAL');
+  console.log('\t(A) borrowIndex:', borrowIndex);
+  console.log('\t(A) slot1:', slot1Hex);
+  console.log('\t(B) slot1:', slot1HexUpdated);
+  console.log('\t(B) borrowIndex:', borrowIndexVerified, '( expected', borrowIndexUpdated, ')\n');
 
-  const [healthA, healthB] = await borrowerLens.read.getHealth([borrower]);
-  // const healthDivisor = 100000000000000n
-  console.log('healthA', Number(healthA / healthDivisor) / 1e4, 'healthB', Number(healthB / healthDivisor) / 1e4);
+  console.log('Post-interest-accrual state');
+  [healthA, healthB] = await borrowerLens.read.getHealth([borrower], args);
+  console.log('\thealthA', Number(healthA / healthDivisor) / 1e9, 'healthB', Number(healthB / healthDivisor) / 1e9);
 }, 100_000);
 
 describe('testing canWarn', () => {
